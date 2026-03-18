@@ -159,7 +159,6 @@ const AIRPORT_TIMEZONES: Record<string, string> = {
   KGUC: 'America/Denver',     // Gunnison-Crested Butte (CO)
   KPUB: 'America/Denver',     // Pueblo Memorial (CO)
   KDRO: 'America/Denver',     // Durango-La Plata County (CO)
-  KGJT: 'America/Denver',     // Grand Junction (alias — same as KGJT above)
 
   // ── Arizona (America/Phoenix — UTC-7, NO daylight saving time) ────────────
   KPHX: 'America/Phoenix',    // Phoenix Sky Harbor

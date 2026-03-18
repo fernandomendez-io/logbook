@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
   // The invite URL contains the token for registration
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   // redirectTo: after Supabase verifies the invite link, user lands here to complete profile
-  const redirectTo = `${appUrl}/auth/callback?token=${invite.token}`
+  const redirectTo = `${appUrl}/auth/callback`
 
   const adminAuth = createAdminAuthClient()
   const { error: inviteError } = await adminAuth.auth.admin.inviteUserByEmail(email, { redirectTo })

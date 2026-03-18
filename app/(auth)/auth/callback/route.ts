@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const token = searchParams.get('token')
 
   if (code) {
     const cookieStore = await cookies()
@@ -27,10 +26,20 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
-      if (token) {
-        // Invited user — redirect to register to complete their profile.
-        // The register page will mark the invitation accepted after profile setup.
-        return NextResponse.redirect(`${origin}/register?token=${token}`)
+      // Check for a pending invitation by email (invite flow — token not in URL)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.email) {
+        const { data: invitation } = await supabase
+          .from('invitations')
+          .select('token')
+          .eq('email', user.email)
+          .is('accepted_at', null)
+          .gt('expires_at', new Date().toISOString())
+          .single()
+
+        if (invitation) {
+          return NextResponse.redirect(`${origin}/register?token=${invitation.token}`)
+        }
       }
       return NextResponse.redirect(`${origin}/dashboard`)
     }

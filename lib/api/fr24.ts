@@ -164,8 +164,8 @@ export async function fetchACARSTimes(
   try {
     const summaryRaw = await fr24Fetch("/api/flight-summary/light", {
       flights: flightIdent,
-      flight_datetime_from: `${date}T00:00:00`,
-      flight_datetime_to: `${date}T23:59:59`,
+      flight_datetime_from: `${date}T00:00:00Z`,
+      flight_datetime_to: `${date}T23:59:59Z`,
     });
 
     if (process.env.NODE_ENV === "development") {

@@ -7,7 +7,13 @@
       "WebSearch",
       "WebFetch(domain:fr24api.flightradar24.com)",
       "WebFetch(domain:www.flightradar24.com)",
-      "Bash(ls -la /c/Users/ferna/dev/logbook/app/'\\(app\\)'/flights/'[id]')"
+      "Bash(ls -la /c/Users/ferna/dev/logbook/app/'\\(app\\)'/flights/'[id]')",
+      "Bash(ls -la /c/Users/ferna/dev/logbook/*.config.*)",
+      "Bash(ls -1 /c/Users/ferna/dev/logbook/app/api/*/*route.ts /c/Users/ferna/dev/logbook/app/api/*/route.ts)",
+      "Bash(ls -1 /c/Users/ferna/dev/logbook/app/*/page.tsx /c/Users/ferna/dev/logbook/app/*/*/page.tsx /c/Users/ferna/dev/logbook/app/*/*/*/page.tsx)",
+      "Bash(ls -1 /c/Users/ferna/dev/logbook/components/*/)",
+      "Bash(xargs ls:*)",
+      "Bash(grep -r \"aerodatabox\\\\|flightaware\" /c/Users/ferna/dev/logbook/app --include=*.ts --include=*.tsx)"
     ]
   }
 }

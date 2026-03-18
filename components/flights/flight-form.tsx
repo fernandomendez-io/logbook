@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { DateTimeUtcInput } from "@/components/ui/datetime-utc-input";
 import { ActualTimeInput } from "@/components/ui/actual-time-input";
 import { getLocalTimezone, getTimezoneAbbr } from "@/lib/utils/timezone";
+import { getAirportTimezone } from "@/lib/data/airport-timezones";
 import { blockHours, flightHours, decimalToHHMM } from "@/lib/utils/format";
 
 interface ApproachSuggestion {
@@ -103,10 +104,6 @@ export default function FlightForm({
   const [error, setError] = useState("");
   const savedRef = useRef(false);
 
-  // Browser timezone — stable for the session
-  const [timezone] = useState(() => getLocalTimezone());
-  const [timezoneAbbr] = useState(() => getTimezoneAbbr(timezone));
-
   const [flightNumber, setFlightNumber] = useState(
     initialValues.flightNumber ?? "",
   );
@@ -114,6 +111,12 @@ export default function FlightForm({
   const [destinationIcao, setDestinationIcao] = useState(
     initialValues.destinationIcao ?? "",
   );
+
+  // Per-airport timezones: OUT/OFF use origin, ON/IN use destination
+  const originTz     = useMemo(() => getAirportTimezone(originIcao) ?? getLocalTimezone(), [originIcao]);
+  const destTz       = useMemo(() => getAirportTimezone(destinationIcao) ?? getLocalTimezone(), [destinationIcao]);
+  const originTzAbbr = useMemo(() => getTimezoneAbbr(originTz), [originTz]);
+  const destTzAbbr   = useMemo(() => getTimezoneAbbr(destTz), [destTz]);
   const [scheduledOutUtc, setScheduledOutUtc] = useState(
     initialValues.scheduledOutUtc ?? "",
   );
@@ -515,8 +518,8 @@ export default function FlightForm({
             onChange={setActualOutUtc}
             hint="Gate departure"
             referenceDate={refDate}
-            timezone={timezone}
-            timezoneAbbr={timezoneAbbr}
+            timezone={originTz}
+            timezoneAbbr={originTzAbbr}
           />
           <ActualTimeInput
             label="OFF"
@@ -524,8 +527,8 @@ export default function FlightForm({
             onChange={setActualOffUtc}
             hint="Wheels off"
             referenceDate={refDate}
-            timezone={timezone}
-            timezoneAbbr={timezoneAbbr}
+            timezone={originTz}
+            timezoneAbbr={originTzAbbr}
           />
           <ActualTimeInput
             label="ON"
@@ -533,8 +536,8 @@ export default function FlightForm({
             onChange={setActualOnUtc}
             hint="Wheels on"
             referenceDate={refDate}
-            timezone={timezone}
-            timezoneAbbr={timezoneAbbr}
+            timezone={destTz}
+            timezoneAbbr={destTzAbbr}
           />
           <ActualTimeInput
             label="IN"
@@ -542,8 +545,8 @@ export default function FlightForm({
             onChange={setActualInUtc}
             hint="Gate arrival"
             referenceDate={refDate}
-            timezone={timezone}
-            timezoneAbbr={timezoneAbbr}
+            timezone={destTz}
+            timezoneAbbr={destTzAbbr}
           />
         </div>
 

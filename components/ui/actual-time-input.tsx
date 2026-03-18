@@ -23,9 +23,7 @@ interface ActualTimeInputProps {
 
 /**
  * Compact actual-time input for ACARS OUT/OFF/ON/IN fields.
- * Shows a UTC row (always) and an optional local-timezone row.
- * The month/year is inferred from referenceDate with rollover logic:
- *   if |entered day − reference day| > 15, we crossed a month boundary.
+ * Aviation suffix style: [DD] [HH:MM] Z on top, [HH:MM] CDT below (indented, time only).
  */
 export function ActualTimeInput({
   label,
@@ -45,22 +43,18 @@ export function ActualTimeInput({
     ? String(parseInt(referenceDate.slice(8, 10), 10))
     : ''
 
-  // Local row draft — non-null only while user is actively editing the local row
-  const [localDraft, setLocalDraft] = useState<{ day: string; time: string } | null>(null)
+  // Local time draft — tracks only HH:MM string while user edits local row
+  const [localDraft, setLocalDraft] = useState<string | null>(null)
 
   // Derived local display from the UTC value
   const localValue = useMemo(() => {
-    if (!timezone || !value) return { datePart: '', timePart: '', displayDay: '' }
+    if (!timezone || !value) return { timePart: '' }
     const dt = utcDtToLocal(value, timezone)
-    if (!dt) return { datePart: '', timePart: '', displayDay: '' }
-    return {
-      datePart: dt.slice(0, 10),
-      timePart: dt.slice(11, 16),
-      displayDay: String(parseInt(dt.slice(8, 10), 10)),
-    }
+    if (!dt) return { timePart: '' }
+    return { timePart: dt.slice(11, 16) }
   }, [value, timezone])
 
-  // Shared month-rollover resolver — ref is any "YYYY-MM-DD" string
+  // Month-rollover resolver — ref is any "YYYY-MM-DD" string
   function resolveDayInMonth(day: number, ref: string): string {
     if (!ref) return ''
     const refYear  = parseInt(ref.slice(0, 4), 10)
@@ -106,44 +100,32 @@ export function ActualTimeInput({
     onChange(resolvedDate ? `${resolvedDate}T${formatted}` : `T${formatted}`)
   }
 
-  // ── Local row handlers ────────────────────────────────────────────────────
-
-  function flushLocalDraft(draft: { day: string; time: string }) {
-    if (!timezone) return
-    const dayNum = parseInt(draft.day, 10)
-    if (isNaN(dayNum) || draft.time.length < 5 || !draft.time.includes(':')) return
-
-    // Reconstruct local YYYY-MM-DDTHH:MM using local reference date
-    const localRef = localValue.datePart ||
-      (referenceDate ? utcDtToLocal(`${referenceDate}T00:00`, timezone).slice(0, 10) : '')
-    if (!localRef) return
-
-    const localDateStr = resolveDayInMonth(dayNum, localRef)
-    if (!localDateStr) return
-
-    const localDT = `${localDateStr}T${draft.time}`
-    const utcResult = localDtToUtc(localDT, timezone)
-    if (utcResult) onChange(utcResult)
-  }
-
-  function handleLocalDay(raw: string) {
-    const draft = { day: raw, time: localDraft?.time ?? localValue.timePart }
-    setLocalDraft(draft)
-    flushLocalDraft(draft)
-  }
+  // ── Local row handler ─────────────────────────────────────────────────────
 
   function handleLocalTime(raw: string) {
     const cleaned   = raw.replace(/[^\d:]/g, '').slice(0, 5)
     const formatted = cleaned.length >= 2 && !cleaned.includes(':')
       ? `${cleaned.slice(0, 2)}:${cleaned.slice(2)}`
       : cleaned
-    const draft = { day: localDraft?.day ?? localValue.displayDay, time: formatted }
-    setLocalDraft(draft)
-    flushLocalDraft(draft)
-  }
+    setLocalDraft(formatted)
+    if (!timezone || formatted.length < 5 || !formatted.includes(':')) return
 
-  function clearLocalDraft() {
-    setLocalDraft(null)
+    // Derive the local date from the current UTC value or reference date
+    let localDatePart: string
+    if (value && value.length >= 16) {
+      const converted = utcDtToLocal(value, timezone)
+      if (!converted) return
+      localDatePart = converted.slice(0, 10)
+    } else if (referenceDate) {
+      const converted = utcDtToLocal(`${referenceDate}T00:00`, timezone)
+      if (!converted) return
+      localDatePart = converted.slice(0, 10)
+    } else {
+      return
+    }
+
+    const utcResult = localDtToUtc(`${localDatePart}T${formatted}`, timezone)
+    if (utcResult) onChange(utcResult)
   }
 
   const labelId = label.toLowerCase().replace(/[^a-z0-9]/g, '-')
@@ -163,9 +145,8 @@ export function ActualTimeInput({
         {label}
       </label>
 
-      {/* UTC row */}
+      {/* UTC row: [DD] [HH:MM] Z */}
       <div className="flex items-center gap-1">
-        <span className="w-8 text-xs font-mono text-foreground/30 text-right shrink-0 select-none">Z</span>
         <input
           id={`${labelId}-utc-day`}
           type="number"
@@ -176,7 +157,7 @@ export function ActualTimeInput({
           placeholder="DD"
           className={cn(
             inputBase,
-            'w-14 text-foreground',
+            'w-12 text-foreground',
             '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
           )}
         />
@@ -190,40 +171,27 @@ export function ActualTimeInput({
           maxLength={5}
           className={cn(inputBase, 'w-20 text-left px-3 placeholder:text-foreground/30 text-foreground')}
         />
+        <span className="text-xs font-mono text-foreground/30 select-none">Z</span>
       </div>
 
-      {/* Local row — only when timezone is provided */}
+      {/* Local row: [spacer] [HH:MM] CDT — time only, indented under UTC time */}
       {timezone && (
         <div className="flex items-center gap-1">
-          <span className="w-8 text-xs font-mono text-green-primary/50 text-right shrink-0 select-none">
-            {timezoneAbbr ?? 'LT'}
-          </span>
-          <input
-            id={`${labelId}-local-day`}
-            type="number"
-            min={1}
-            max={31}
-            value={localDraft?.day ?? localValue.displayDay}
-            onChange={e => handleLocalDay(e.target.value)}
-            onBlur={clearLocalDraft}
-            placeholder="DD"
-            className={cn(
-              inputBase,
-              'w-14 text-foreground/70',
-              '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
-            )}
-          />
+          <div className="w-12 shrink-0" aria-hidden="true" />
           <input
             id={`${labelId}-local-time`}
             type="text"
             inputMode="numeric"
-            value={localDraft?.time ?? localValue.timePart}
+            value={localDraft ?? localValue.timePart}
             onChange={e => handleLocalTime(e.target.value)}
-            onBlur={clearLocalDraft}
+            onBlur={() => setLocalDraft(null)}
             placeholder="HH:MM"
             maxLength={5}
             className={cn(inputBase, 'w-20 text-left px-3 placeholder:text-foreground/30 text-foreground/70')}
           />
+          <span className="text-xs font-mono text-green-primary/50 select-none">
+            {timezoneAbbr ?? 'LT'}
+          </span>
         </div>
       )}
 

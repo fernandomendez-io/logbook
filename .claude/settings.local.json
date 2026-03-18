@@ -13,7 +13,8 @@
       "Bash(ls -1 /c/Users/ferna/dev/logbook/app/*/page.tsx /c/Users/ferna/dev/logbook/app/*/*/page.tsx /c/Users/ferna/dev/logbook/app/*/*/*/page.tsx)",
       "Bash(ls -1 /c/Users/ferna/dev/logbook/components/*/)",
       "Bash(xargs ls:*)",
-      "Bash(grep -r \"aerodatabox\\\\|flightaware\" /c/Users/ferna/dev/logbook/app --include=*.ts --include=*.tsx)"
+      "Bash(grep -r \"aerodatabox\\\\|flightaware\" /c/Users/ferna/dev/logbook/app --include=*.ts --include=*.tsx)",
+      "Bash(find c:/Users/ferna/dev/logbook -type f -name *airport* -o -name *icao* -o -name *timezone*)"
     ]
   }
 }

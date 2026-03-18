@@ -53,7 +53,7 @@ export default function NewSequencePage() {
     const res = await fetch('/api/sequences', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rawText, confirmedFlights: parsed.allFlights }),
+      body: JSON.stringify({ rawText, yearMonth, confirmedFlights: parsed.allFlights }),
     })
     const data = await res.json()
     setSaving(false)

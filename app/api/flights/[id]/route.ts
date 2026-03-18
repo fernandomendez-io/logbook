@@ -93,3 +93,26 @@ export async function PATCH(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ flight: data })
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: existing } = await supabase
+    .from('flights')
+    .select('pilot_id')
+    .eq('id', id)
+    .single()
+
+  if (!existing || existing.pilot_id !== user.id)
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const { error } = await supabase.from('flights').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ deleted: true })
+}

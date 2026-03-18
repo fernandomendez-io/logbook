@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Pagination } from "@/components/ui/pagination";
 import { decimalToHHMM, formatDate } from "@/lib/utils/format";
 import { FetchTimesButton } from "@/components/flights/fetch-times-button";
+import { DeleteFlightButton } from "@/components/flights/delete-flight-button";
 
 const PAGE_SIZE = 50
 
@@ -194,6 +195,7 @@ export default async function FlightsPage({
                             Edit
                           </Badge>
                         </Link>
+                        <DeleteFlightButton flightId={f.id} />
                       </div>
                     </td>
                   </tr>
@@ -355,10 +357,13 @@ export default async function FlightsPage({
                     {f.approach_runway || "—"}
                   </td>
                   <td className="px-4 py-2.5">
-                    <FetchTimesButton
-                      flightId={f.id}
-                      hasActualTimes={!!f.actual_out_utc}
-                    />
+                    <div className="flex items-center gap-1">
+                      <FetchTimesButton
+                        flightId={f.id}
+                        hasActualTimes={!!f.actual_out_utc}
+                      />
+                      <DeleteFlightButton flightId={f.id} />
+                    </div>
                   </td>
                 </tr>
               ))}

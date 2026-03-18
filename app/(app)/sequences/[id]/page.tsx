@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate, decimalToHHMM } from '@/lib/utils/format'
 import { FetchTimesButton } from '@/components/flights/fetch-times-button'
+import { DeleteFlightButton } from '@/components/flights/delete-flight-button'
 
 export default async function SequenceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -126,7 +127,10 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
                      <Badge variant="gray">Sched</Badge>}
                   </td>
                   <td className="py-3">
-                    {!flight.is_cancelled && <FetchTimesButton flightId={flight.id} hasActualTimes={!!flight.actual_out_utc} />}
+                    <div className="flex items-center gap-1">
+                      {!flight.is_cancelled && <FetchTimesButton flightId={flight.id} hasActualTimes={!!flight.actual_out_utc} />}
+                      <DeleteFlightButton flightId={flight.id} />
+                    </div>
                   </td>
                 </tr>
               ))}

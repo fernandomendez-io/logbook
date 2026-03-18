@@ -8,6 +8,11 @@ export interface AirspaceTransition {
   entered:   string | null
 }
 
+interface RawEvent {
+  alt?:       number | null
+  timestamp?: string
+}
+
 interface FlightProfileProps {
   outUtc:              string | null
   offUtc:              string | null
@@ -19,6 +24,7 @@ interface FlightProfileProps {
   airspaceTransitions: AirspaceTransition[]
   departureRunway:     string | null
   landingRunway:       string | null
+  rawEvents?:          RawEvent[]
 }
 
 // SVG constants
@@ -27,11 +33,8 @@ const H = 200
 const PAD_X = 48
 const GROUND_Y = 172
 const CRUISE_Y = 38
-const CLIMB_X_FRAC  = 0.18   // OFF is ~18% across timeline
-const CRUISE_X_FRAC = 0.50   // cruise midpoint
-const DESCENT_X_FRAC = 0.78  // descent starts ~78%
 
-function toMs(iso: string | null): number {
+function toMs(iso: string | null | undefined): number {
   return iso ? new Date(iso).getTime() : 0
 }
 
@@ -49,12 +52,53 @@ function dur(a: string | null, b: string | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+// Catmull-Rom spline segment → cubic bezier control points
+function catmullToCubic(
+  p0: [number, number], p1: [number, number],
+  p2: [number, number], p3: [number, number]
+): [[number, number], [number, number]] {
+  return [
+    [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6],
+    [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6],
+  ]
+}
+
+// Build SVG path from catmull-rom points
+function catmullPath(pts: [number, number][]): string {
+  if (pts.length < 2) return ''
+  const parts: string[] = [`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`]
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[Math.min(pts.length - 1, i + 2)]
+    const [cp1, cp2] = catmullToCubic(p0, p1, p2, p3)
+    parts.push(`C ${cp1[0].toFixed(1)},${cp1[1].toFixed(1)} ${cp2[0].toFixed(1)},${cp2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`)
+  }
+  return parts.join(' ')
+}
+
+// Linear interpolate altitude Y at a given ms from sorted alt points
+function interpAltY(ms: number, pts: { ms: number; y: number }[]): number {
+  if (pts.length === 0) return GROUND_Y
+  if (ms <= pts[0].ms) return pts[0].y
+  if (ms >= pts[pts.length - 1].ms) return pts[pts.length - 1].y
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (ms >= pts[i].ms && ms <= pts[i + 1].ms) {
+      const t = (ms - pts[i].ms) / (pts[i + 1].ms - pts[i].ms)
+      return pts[i].y + t * (pts[i + 1].y - pts[i].y)
+    }
+  }
+  return GROUND_Y
+}
+
 export function FlightProfile({
   outUtc, offUtc, onUtc, inUtc,
   descentStartUtc,
   cruiseAltFt, cruiseGspeedKts,
   airspaceTransitions,
   departureRunway, landingRunway,
+  rawEvents = [],
 }: FlightProfileProps) {
   const [hovered, setHovered] = useState<string | null>(null)
 
@@ -66,7 +110,7 @@ export function FlightProfile({
   const span = endMs - startMs
 
   // Convert timestamp to SVG x
-  function tx(iso: string | null): number {
+  function tx(iso: string | null | undefined): number {
     if (!iso) return PAD_X
     const ms = toMs(iso)
     return PAD_X + ((ms - startMs) / span) * (W - PAD_X * 2)
@@ -77,37 +121,87 @@ export function FlightProfile({
   const xDesc = descentStartUtc ? tx(descentStartUtc) : W - PAD_X - (W - PAD_X * 2) * 0.22
   const xOn   = tx(onUtc)
   const xIn   = W - PAD_X
-
-  // Hill path: smooth cubic bezier
-  const path = [
-    `M ${xOut} ${GROUND_Y}`,
-    // climb: steep ramp from OUT → OFF, continuing to cruise level
-    `C ${xOut + 20} ${GROUND_Y}, ${xOff - 20} ${CRUISE_Y + 30}, ${xOff} ${CRUISE_Y + 10}`,
-    // cruise plateau: OUT of climb → into descent
-    `C ${xOff + 40} ${CRUISE_Y}, ${xDesc - 40} ${CRUISE_Y}, ${xDesc} ${CRUISE_Y + 10}`,
-    // descent: ramp down to landing
-    `C ${xDesc + 20} ${CRUISE_Y + 30}, ${xOn - 20} ${GROUND_Y}, ${xOn} ${GROUND_Y}`,
-    // taxi in
-    `L ${xIn} ${GROUND_Y}`,
-  ].join(' ')
-
-  // Gradient fill path (closed)
-  const fillPath = path + ` L ${xIn} ${H - 10} L ${xOut} ${H - 10} Z`
-
-  // Key phase dots
-  const phases = [
-    { id: 'out',    x: xOut,  y: GROUND_Y,      label: 'OUT',     time: outUtc,  next: offUtc,  desc: 'Gate departure' },
-    { id: 'off',    x: xOff,  y: CRUISE_Y + 10, label: 'OFF',     time: offUtc,  next: onUtc,   desc: 'Wheels off' },
-    { id: 'cruise', x: tx(descentStartUtc ? undefined : null) || (xOff + xDesc) / 2,
-                              y: CRUISE_Y,       label: 'Cruise',  time: null,    next: null,    desc: 'Cruise phase' },
-    { id: 'desc',   x: xDesc, y: CRUISE_Y + 10, label: 'Descent', time: descentStartUtc, next: onUtc, desc: 'Top of descent' },
-    { id: 'on',     x: xOn,   y: GROUND_Y,      label: 'ON',      time: onUtc,   next: inUtc,   desc: 'Wheels on' },
-    { id: 'in',     x: xIn,   y: GROUND_Y,      label: 'IN',      time: inUtc,   next: null,    desc: 'Gate arrival' },
-  ]
-  // Cruise midpoint x for badges
   const xCruiseMid = (xOff + xDesc) / 2
 
-  // Airspace transitions — map to x positions, show entered center name
+  // ─── Real altitude data ───────────────────────────────────────────────────
+  const altPoints = rawEvents
+    .filter(e => e.alt != null && e.timestamp)
+    .map(e => ({ ms: toMs(e.timestamp), alt: e.alt! }))
+    .filter(e => e.ms >= startMs && e.ms <= endMs)
+    .sort((a, b) => a.ms - b.ms)
+
+  const useRealAlt = altPoints.length >= 3
+  const maxAlt = useRealAlt ? Math.max(...altPoints.map(p => p.alt)) : 1
+  const altToY = (alt: number) => GROUND_Y - (alt / maxAlt) * (GROUND_Y - CRUISE_Y)
+
+  // Map alt points to SVG coordinates (downsample if very dense)
+  const svgAltPts: [number, number][] = (() => {
+    if (!useRealAlt) return []
+    // Downsample to max ~120 points for smooth but lightweight path
+    const step = Math.max(1, Math.floor(altPoints.length / 120))
+    const sampled = altPoints.filter((_, i) => i % step === 0 || i === altPoints.length - 1)
+    return sampled.map(p => [
+      PAD_X + ((p.ms - startMs) / span) * (W - PAD_X * 2),
+      altToY(p.alt),
+    ])
+  })()
+
+  // Altitude Y lookup for phase dots
+  const altYLookup = altPoints.map(p => ({
+    ms: p.ms,
+    y: altToY(p.alt),
+  }))
+
+  function phaseY(iso: string | null | undefined): number {
+    if (!useRealAlt || !iso) return GROUND_Y
+    const ms = toMs(iso)
+    return interpAltY(ms, altYLookup)
+  }
+
+  // ─── Paths ────────────────────────────────────────────────────────────────
+  let path: string
+  let fillPath: string
+
+  if (useRealAlt && svgAltPts.length >= 2) {
+    // Prepend and append ground anchor points for smooth ramp
+    const allPts: [number, number][] = [
+      [xOut, GROUND_Y],
+      ...svgAltPts,
+      [xIn, GROUND_Y],
+    ]
+    path = catmullPath(allPts)
+    fillPath = path + ` L ${xIn} ${H - 10} L ${xOut} ${H - 10} Z`
+  } else {
+    // Fallback: cubic bezier hill
+    const bezier = [
+      `M ${xOut} ${GROUND_Y}`,
+      `C ${xOut + 20} ${GROUND_Y}, ${xOff - 20} ${CRUISE_Y + 30}, ${xOff} ${CRUISE_Y + 10}`,
+      `C ${xOff + 40} ${CRUISE_Y}, ${xDesc - 40} ${CRUISE_Y}, ${xDesc} ${CRUISE_Y + 10}`,
+      `C ${xDesc + 20} ${CRUISE_Y + 30}, ${xOn - 20} ${GROUND_Y}, ${xOn} ${GROUND_Y}`,
+      `L ${xIn} ${GROUND_Y}`,
+    ].join(' ')
+    path = bezier
+    fillPath = bezier + ` L ${xIn} ${H - 10} L ${xOut} ${H - 10} Z`
+  }
+
+  // ─── Phase dots ───────────────────────────────────────────────────────────
+  const offY  = useRealAlt ? phaseY(offUtc)          : CRUISE_Y + 10
+  const descY = useRealAlt ? phaseY(descentStartUtc) : CRUISE_Y + 10
+  const onY   = useRealAlt ? phaseY(onUtc)           : GROUND_Y
+  const cruiseY = useRealAlt
+    ? (maxAlt > 0 ? altToY(maxAlt) : CRUISE_Y)
+    : CRUISE_Y
+
+  const phases = [
+    { id: 'out',    x: xOut,       y: GROUND_Y, label: 'OUT',     time: outUtc,          next: offUtc,  desc: 'Gate departure' },
+    { id: 'off',    x: xOff,       y: offY,     label: 'OFF',     time: offUtc,          next: onUtc,   desc: 'Wheels off' },
+    { id: 'cruise', x: xCruiseMid, y: cruiseY,  label: 'Cruise',  time: null,            next: null,    desc: 'Cruise phase' },
+    { id: 'desc',   x: xDesc,      y: descY,    label: 'Descent', time: descentStartUtc, next: onUtc,   desc: 'Top of descent' },
+    { id: 'on',     x: xOn,        y: onY,      label: 'ON',      time: onUtc,           next: inUtc,   desc: 'Wheels on' },
+    { id: 'in',     x: xIn,        y: GROUND_Y, label: 'IN',      time: inUtc,           next: null,    desc: 'Gate arrival' },
+  ]
+
+  // Airspace transitions
   const airspaceBadges = airspaceTransitions
     .filter(t => t.entered && t.timestamp)
     .map(t => ({ label: t.entered!, x: tx(t.timestamp), time: t.timestamp }))
@@ -145,7 +239,7 @@ export function FlightProfile({
         {/* Fill */}
         <path d={fillPath} fill="url(#profileGrad)" />
 
-        {/* Hill curve */}
+        {/* Profile curve */}
         <path d={path} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
         {/* Runway labels near ground */}
@@ -165,9 +259,9 @@ export function FlightProfile({
         {/* Cruise info badge */}
         {(cruiseAltFt || cruiseGspeedKts) && (
           <g>
-            <rect x={xCruiseMid - 42} y={CRUISE_Y - 22} width="84" height="16"
+            <rect x={xCruiseMid - 42} y={cruiseY - 22} width="84" height="16"
                   rx="4" fill="#0f1a0f" stroke="#22c55e" strokeWidth="0.5" strokeOpacity="0.4" />
-            <text x={xCruiseMid} y={CRUISE_Y - 11} textAnchor="middle"
+            <text x={xCruiseMid} y={cruiseY - 11} textAnchor="middle"
                   fontSize="9" fill="#4ade80" fontFamily="monospace">
               {cruiseAltFt ? `FL${Math.round(cruiseAltFt / 100)}` : ''}
               {cruiseAltFt && cruiseGspeedKts ? ' · ' : ''}
@@ -182,14 +276,11 @@ export function FlightProfile({
              onMouseEnter={() => setHovered(p.id)}
              onMouseLeave={() => setHovered(null)}
              style={{ cursor: 'default' }}>
-            {/* Larger invisible hit area */}
             <circle cx={p.x} cy={p.y} r={14} fill="transparent" />
-            {/* Visible dot */}
             <circle cx={p.x} cy={p.y} r={hovered === p.id ? 5 : 3.5}
                     fill={hovered === p.id ? '#22c55e' : '#166534'}
                     stroke="#22c55e" strokeWidth="1.5"
                     style={{ transition: 'r 0.1s' }} />
-            {/* Phase label below (above for cruise) */}
             <text x={p.x} y={p.id === 'cruise' ? p.y - 6 : GROUND_Y + 28}
                   textAnchor="middle" fontSize="8.5" fill="#6b7280" fontFamily="monospace">
               {p.label}
@@ -210,7 +301,7 @@ export function FlightProfile({
         ))}
       </svg>
 
-      {/* Tooltip — rendered in HTML for better styling */}
+      {/* Tooltip */}
       {hovered && (() => {
         const p = phases.find(ph => ph.id === hovered)
         if (!p) return null

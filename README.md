@@ -25,7 +25,7 @@ A comprehensive flight logbook application for pilots to track flight hours, seq
 - **Database**: Supabase (PostgreSQL)
 - **Styling**: Tailwind CSS
 - **Authentication**: OAuth & Email-based auth
-- **External APIs**: 
+- **External APIs**:
   - FlightAware
   - FlightRadar24
   - AeroDataBox
@@ -64,11 +64,13 @@ supabase/              # Database migrations
 ### Installation
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Set up environment variables by creating a `.env.local` file:
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_key
@@ -77,11 +79,13 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
 3. Run database migrations:
+
 ```bash
 npx supabase migration up
 ```
 
 4. Start the development server:
+
 ```bash
 npm run dev
 ```
@@ -98,27 +102,33 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## API Routes
 
 ### Flights
+
 - `GET/POST /api/flights` - List and create flights
 - `GET/PUT /api/flights/[id]` - Get and update specific flight
 - `GET /api/flights/[id]/acars` - Get ACARS data for flight
 
 ### Sequences
+
 - `GET/POST /api/sequences` - Manage flight sequences
 - `POST /api/sequences/parse` - Parse flight sequences
 
 ### Weather
+
 - `GET /api/metar` - Get METAR data
 
 ### Analytics
+
 - `GET /api/far117` - FAR 117 compliance data
 
 ### User Management
+
 - `GET/POST /api/admin/users` - Manage users
 - `GET/POST /api/admin/invitations` - Manage invitations
 
 ## Database Schema
 
 The application uses Supabase with the following main tables:
+
 - `users` - User profiles
 - `flights` - Flight records
 - `sequences` - Flight sequences

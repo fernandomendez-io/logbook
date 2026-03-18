@@ -135,6 +135,7 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
               airspaceTransitions={f.airspace_transitions ?? []}
               departureRunway={f.departure_runway}
               landingRunway={f.approach_runway}
+              rawEvents={rawEvents}
             />
           </div>
         </Card>

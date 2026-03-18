@@ -4,16 +4,22 @@ import { fetchMetarAtTime } from '@/lib/api/aviationweather'
 import { parseMetar } from '@/lib/aviation/metar-parser'
 import { classifyApproach } from '@/lib/aviation/approach-classifier'
 
+/** Normalize IATA (3-letter) to ICAO (4-letter) for US airports */
+export function toIcao(station: string): string {
+  if (station.length === 3) return `K${station}`
+  return station
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const station = searchParams.get('station')?.toUpperCase()
+  const rawStation = searchParams.get('station')?.toUpperCase()
   const timeStr = searchParams.get('time')  // ISO UTC string
 
-  if (!station || !timeStr) {
+  if (!rawStation || !timeStr) {
     return NextResponse.json({ error: 'station and time are required' }, { status: 400 })
   }
 
@@ -21,6 +27,9 @@ export async function GET(request: NextRequest) {
   if (isNaN(targetTime.getTime())) {
     return NextResponse.json({ error: 'Invalid time format' }, { status: 400 })
   }
+
+  // Normalize IATA → ICAO before querying or caching
+  const station = toIcao(rawStation)
 
   // Check cache: find METAR within 90 minutes before the target time
   const windowStart = new Date(targetTime.getTime() - 90 * 60000).toISOString()
@@ -40,10 +49,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ metar: cached.raw_metar, parsed, suggestion, source: 'cache' })
   }
 
-  // Fetch live
+  // Fetch live from AWC
   const result = await fetchMetarAtTime(station, targetTime)
   if (!result) {
-    return NextResponse.json({ error: 'METAR not available for that station/time' }, { status: 404 })
+    return NextResponse.json({ error: `METAR not available for ${station}` }, { status: 404 })
   }
 
   const parsed = parseMetar(result.rawOb)

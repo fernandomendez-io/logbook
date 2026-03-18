@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
       had_return_to_gate: body.hadReturnToGate || false,
       rtg_reason: body.rtgReason || null,
       notes: body.notes || null,
+      night_time_hrs: body.nightTimeHrs ?? null,
       cross_country: true,
     })
     .select()

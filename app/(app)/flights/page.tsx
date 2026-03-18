@@ -4,8 +4,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Pagination } from "@/components/ui/pagination";
 import { decimalToHHMM, formatDate } from "@/lib/utils/format";
 import { FetchTimesButton } from "@/components/flights/fetch-times-button";
+
+const PAGE_SIZE = 50
 
 export default async function FlightsPage({
   searchParams,
@@ -15,6 +18,7 @@ export default async function FlightsPage({
     end?: string;
     aircraft?: string;
     approach?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -27,6 +31,10 @@ export default async function FlightsPage({
   const nowIso = new Date().toISOString();
   const hasFilters =
     params.start || params.end || params.aircraft || params.approach;
+
+  const page = Math.max(1, parseInt(params.page ?? "1", 10));
+  const from = (page - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
 
   // ── Upcoming flights (future, ascending) — not shown when filters active ──
   const { data: upcomingFlights } = hasFilters
@@ -47,7 +55,7 @@ export default async function FlightsPage({
     .eq("pilot_id", user.id)
     .lte("scheduled_out_utc", nowIso)
     .order("scheduled_out_utc", { ascending: false })
-    .limit(100);
+    .range(from, to);
 
   if (params.start)
     query = query.gte("scheduled_out_utc", `${params.start}T00:00:00Z`);
@@ -70,6 +78,8 @@ export default async function FlightsPage({
     );
 
   const { data: pastFlights, count } = await query;
+
+  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   // Totals for past flights
   const totalFlightTime =
@@ -195,7 +205,7 @@ export default async function FlightsPage({
       )}
 
       {/* Past flights stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           {
             label: "Total Flights",
@@ -371,6 +381,20 @@ export default async function FlightsPage({
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          buildHref={(p) => {
+            const sp = new URLSearchParams();
+            if (params.start) sp.set("start", params.start);
+            if (params.end) sp.set("end", params.end);
+            if (params.aircraft) sp.set("aircraft", params.aircraft);
+            if (params.approach) sp.set("approach", params.approach);
+            if (p > 1) sp.set("page", String(p));
+            const qs = sp.toString();
+            return `/flights${qs ? `?${qs}` : ""}`;
+          }}
+        />
       </Card>
     </div>
   );

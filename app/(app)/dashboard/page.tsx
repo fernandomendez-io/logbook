@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { decimalToHHMM, formatDate } from '@/lib/utils/format'
 import { buildFAR117Status, LIMIT_28D, LIMIT_365D } from '@/lib/aviation/far117'
+import { daysUntilExpiry, expiryStatus } from '@/lib/aviation/certificates'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -50,6 +51,15 @@ export default async function DashboardPage() {
     .lte('scheduled_out_utc', nowIso)
     .order('scheduled_out_utc', { ascending: false })
     .limit(5)
+
+  // ── Certificates expiring soon ──
+  const in60Days = new Date(now.getTime() + 60 * 24 * 3600 * 1000).toISOString().slice(0, 10)
+  const { data: expiringCerts } = await supabase
+    .from('certificates')
+    .select('id, cert_name, expires_date')
+    .eq('pilot_id', user.id)
+    .lte('expires_date', in60Days)
+    .order('expires_date', { ascending: true })
 
   // ── FAR 117 current ──
   const { data: far117Data } = await supabase.rpc('compute_far117', {
@@ -131,6 +141,31 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {/* Certificate expiry alerts */}
+      {(expiringCerts ?? []).map(cert => {
+        const days = cert.expires_date ? daysUntilExpiry(new Date(cert.expires_date), now) : null
+        if (days === null) return null
+        const status = expiryStatus(days)
+        return (
+          <div key={cert.id} className={`rounded-lg px-4 py-3 flex items-center gap-3 ${
+            status === 'danger'
+              ? 'bg-red-500/10 border border-red-500/30'
+              : 'bg-yellow-500/10 border border-yellow-500/30'
+          }`}>
+            <svg className={`w-5 h-5 shrink-0 ${status === 'danger' ? 'text-red-400' : 'text-yellow-400'}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            </svg>
+            <p className={`text-sm ${status === 'danger' ? 'text-red-400' : 'text-yellow-300'}`}>
+              <strong>{cert.cert_name}</strong>{' '}
+              {days < 0 ? `expired ${Math.abs(days)} days ago` : days === 0 ? 'expires today' : `expires in ${days} days`}
+            </p>
+            <Link href="/certificates" className={`ml-auto text-xs hover:underline ${status === 'danger' ? 'text-red-400' : 'text-yellow-400'}`}>
+              View →
+            </Link>
+          </div>
+        )
+      })}
+
       {/* Projected 28-day warning */}
       {far117.isCompliant && projected28dPct >= 85 && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
@@ -147,7 +182,7 @@ export default async function DashboardPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'This Month — Flights', value: monthCount.toString() },
           { label: 'This Month — Block', value: decimalToHHMM(monthBlock) },
@@ -161,9 +196,9 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left column: Recent + Upcoming */}
-        <div className="col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-4">
 
           {/* Upcoming this month */}
           {upcomingCount > 0 && (

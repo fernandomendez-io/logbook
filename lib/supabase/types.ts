@@ -19,6 +19,7 @@ export type Database = {
           is_active: boolean
           operating_carrier: string | null  // e.g. "YV_AA" (Mesa for American)
           flight_prefix: string | null      // e.g. "AA" — prepended to bare flight numbers
+          date_of_birth: string | null
           created_at: string
           updated_at: string
         }
@@ -352,6 +353,29 @@ export type Database = {
           accepted_at?: string | null
         }
         Update: Partial<Database['public']['Tables']['invitations']['Insert']>
+        Relationships: []
+      }
+      certificates: {
+        Row: {
+          id: string
+          pilot_id: string
+          cert_type: 'medical_1st' | 'medical_2nd' | 'medical_3rd' | 'type_rating' | 'bfr' | 'other'
+          cert_name: string
+          issued_date: string | null
+          expires_date: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          pilot_id: string
+          cert_type: 'medical_1st' | 'medical_2nd' | 'medical_3rd' | 'type_rating' | 'bfr' | 'other'
+          cert_name: string
+          issued_date?: string | null
+          expires_date?: string | null
+          notes?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['certificates']['Insert']>
         Relationships: []
       }
     }

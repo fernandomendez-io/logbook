@@ -122,7 +122,7 @@ export default async function FAR117Page() {
       {/* Gauges */}
       <Card>
         <CardHeader><CardTitle>Flight Time Accumulators</CardTitle></CardHeader>
-        <div className="flex justify-around py-4">
+        <div className="flex flex-wrap justify-around gap-4 py-4">
           <GaugeRing
             pct={status.flightTime28dPct}
             label="28-Day (100 hr limit)"

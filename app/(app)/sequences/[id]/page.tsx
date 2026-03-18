@@ -48,7 +48,7 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Flights', value: flights?.filter(f => !f.is_cancelled && !f.is_deadhead).length || 0 },
           { label: 'Deadheads', value: flights?.filter(f => f.is_deadhead).length || 0 },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,8 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DateTimeUtcInput } from "@/components/ui/datetime-utc-input";
 import { ActualTimeInput } from "@/components/ui/actual-time-input";
+import { getLocalTimezone, getTimezoneAbbr } from "@/lib/utils/timezone";
+import { blockHours, flightHours, decimalToHHMM } from "@/lib/utils/format";
 
 interface ApproachSuggestion {
   type: string;
@@ -58,6 +60,7 @@ export interface FlightFormInitialValues {
   hadDiversion?: boolean;
   hadGoAround?: boolean;
   hadRTG?: boolean;
+  nightTimeHrs?: number | null;
   notes?: string;
 }
 
@@ -98,6 +101,11 @@ export default function FlightForm({
   const isEdit = Boolean(flightId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const savedRef = useRef(false);
+
+  // Browser timezone — stable for the session
+  const [timezone] = useState(() => getLocalTimezone());
+  const [timezoneAbbr] = useState(() => getTimezoneAbbr(timezone));
 
   const [flightNumber, setFlightNumber] = useState(
     initialValues.flightNumber ?? "",
@@ -164,6 +172,9 @@ export default function FlightForm({
   );
   const [hadRTG, setHadRTG] = useState(initialValues.hadRTG ?? false);
   const [notes, setNotes] = useState(initialValues.notes ?? "");
+  const [nightTimeHrs, setNightTimeHrs] = useState(
+    initialValues.nightTimeHrs !== undefined ? String(initialValues.nightTimeHrs ?? "") : "",
+  );
 
   const [acarsLoading, setAcarsLoading] = useState(false);
   const [acarsNotice, setAcarsNotice] = useState<string | null>(null);
@@ -174,6 +185,91 @@ export default function FlightForm({
   const [metarLoading, setMetarLoading] = useState(false);
   const [copilotLoading, setCopilotLoading] = useState(false);
 
+  // ── Unsaved changes tracking ───────────────────────────────────────────────
+
+  // useState initializer runs once on mount — safe to read during render, never changes
+  const [initialSnapshot] = useState(() => ({
+    flightNumber:    initialValues.flightNumber    ?? "",
+    originIcao:      initialValues.originIcao      ?? "",
+    destinationIcao: initialValues.destinationIcao ?? "",
+    scheduledOutUtc: initialValues.scheduledOutUtc ?? "",
+    scheduledInUtc:  initialValues.scheduledInUtc  ?? "",
+    actualOutUtc:    initialValues.actualOutUtc    ?? "",
+    actualOffUtc:    initialValues.actualOffUtc    ?? "",
+    actualOnUtc:     initialValues.actualOnUtc     ?? "",
+    actualInUtc:     initialValues.actualInUtc     ?? "",
+    aircraftType:    initialValues.aircraftType    ?? "",
+    tailNumber:      initialValues.tailNumber      ?? "",
+    pilotFlying:     initialValues.pilotFlying     ?? "",
+    landingPilot:    initialValues.landingPilot    ?? initialValues.pilotFlying ?? "",
+    approachType:    initialValues.approachType    ?? "",
+    approachRunway:  initialValues.approachRunway  ?? "",
+    copilotEmployee: initialValues.copilotEmployeeNumber ?? "",
+    isDeadhead:      initialValues.isDeadhead      ?? false,
+    hadDiversion:    initialValues.hadDiversion    ?? false,
+    hadGoAround:     initialValues.hadGoAround     ?? false,
+    hadRTG:          initialValues.hadRTG          ?? false,
+    nightTimeHrs:    initialValues.nightTimeHrs !== undefined ? String(initialValues.nightTimeHrs ?? "") : "",
+    notes:           initialValues.notes           ?? "",
+  }));
+
+  const isDirty = useMemo(() => (
+    flightNumber      !== initialSnapshot.flightNumber      ||
+    originIcao        !== initialSnapshot.originIcao        ||
+    destinationIcao   !== initialSnapshot.destinationIcao   ||
+    scheduledOutUtc   !== initialSnapshot.scheduledOutUtc   ||
+    scheduledInUtc    !== initialSnapshot.scheduledInUtc    ||
+    actualOutUtc      !== initialSnapshot.actualOutUtc      ||
+    actualOffUtc      !== initialSnapshot.actualOffUtc      ||
+    actualOnUtc       !== initialSnapshot.actualOnUtc       ||
+    actualInUtc       !== initialSnapshot.actualInUtc       ||
+    aircraftType      !== initialSnapshot.aircraftType      ||
+    tailNumber        !== initialSnapshot.tailNumber        ||
+    pilotFlying       !== initialSnapshot.pilotFlying       ||
+    landingPilot      !== initialSnapshot.landingPilot      ||
+    approachType      !== initialSnapshot.approachType      ||
+    approachRunway    !== initialSnapshot.approachRunway    ||
+    copilotEmployee   !== initialSnapshot.copilotEmployee   ||
+    isDeadhead        !== initialSnapshot.isDeadhead        ||
+    hadDiversion      !== initialSnapshot.hadDiversion      ||
+    hadGoAround       !== initialSnapshot.hadGoAround       ||
+    hadRTG            !== initialSnapshot.hadRTG            ||
+    nightTimeHrs      !== initialSnapshot.nightTimeHrs      ||
+    notes             !== initialSnapshot.notes
+  ), [flightNumber, originIcao, destinationIcao, scheduledOutUtc, scheduledInUtc,
+      actualOutUtc, actualOffUtc, actualOnUtc, actualInUtc, aircraftType, tailNumber,
+      pilotFlying, landingPilot, approachType, approachRunway, copilotEmployee,
+      isDeadhead, hadDiversion, hadGoAround, hadRTG, nightTimeHrs, notes,
+      initialSnapshot]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (savedRef.current) return;
+      e.preventDefault();
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
+  // ── Live block / flight time preview ──────────────────────────────────────
+
+  const blockDisplay = useMemo(() => {
+    const out = toIso(actualOutUtc), ins = toIso(actualInUtc);
+    if (!out || !ins) return "—";
+    const hrs = blockHours(out, ins);
+    return hrs > 0 ? decimalToHHMM(hrs) : "—";
+  }, [actualOutUtc, actualInUtc]);
+
+  const flightDisplay = useMemo(() => {
+    const off = toIso(actualOffUtc), on = toIso(actualOnUtc);
+    if (!off || !on) return "—";
+    const hrs = flightHours(off, on);
+    return hrs > 0 ? decimalToHHMM(hrs) : "—";
+  }, [actualOffUtc, actualOnUtc]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
   function handlePilotFlyingChange(val: string) {
     setPilotFlying(val);
     if (!landingPilotOverridden) setLandingPilot(val);
@@ -182,6 +278,11 @@ export default function FlightForm({
   function handleLandingPilotChange(val: string) {
     setLandingPilot(val);
     setLandingPilotOverridden(val !== pilotFlying);
+  }
+
+  function handleFillFromScheduled() {
+    if (scheduledOutUtc) setActualOutUtc(scheduledOutUtc);
+    if (scheduledInUtc) setActualInUtc(scheduledInUtc);
   }
 
   async function fetchACARs() {
@@ -198,7 +299,6 @@ export default function FlightForm({
     console.log("[ACARS response]", data);
 
     if (data.fallback) {
-      // Scheduled times available but no actual ACARS — manual input required
       setAcarsNotice(
         `Manual input required — ${data.fallbackReason ?? "no actual times recorded by AeroDataBox"}.`,
       );
@@ -290,6 +390,7 @@ export default function FlightForm({
       hadDiversion,
       hadGoAround,
       hadReturnToGate: hadRTG,
+      nightTimeHrs: nightTimeHrs !== "" ? parseFloat(nightTimeHrs) : null,
       notes: notes || null,
     };
 
@@ -306,11 +407,14 @@ export default function FlightForm({
     setSaving(false);
 
     if (data.flight) {
+      savedRef.current = true;
       router.push(`/flights/${data.flight.id}`);
     } else {
       setError(data.error || "Save failed");
     }
   }
+
+  const refDate = scheduledOutUtc.slice(0, 10) || undefined;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -364,19 +468,30 @@ export default function FlightForm({
         </div>
       </Card>
 
-      {/* ACARS Times */}
+      {/* Actual Times */}
       <Card>
         <CardHeader>
-          <CardTitle>Actual Times (UTC)</CardTitle>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={fetchACARs}
-            loading={acarsLoading}
-            disabled={!flightNumber || !scheduledOutUtc}
-          >
-            Fetch ACARS
-          </Button>
+          <CardTitle>Actual Times</CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleFillFromScheduled}
+              disabled={!scheduledOutUtc && !scheduledInUtc}
+              title="Copy scheduled OUT/IN to actual"
+            >
+              Fill from Scheduled
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={fetchACARs}
+              loading={acarsLoading}
+              disabled={!flightNumber || !scheduledOutUtc}
+            >
+              Fetch ACARS
+            </Button>
+          </div>
         </CardHeader>
         {acarsNotice && (
           <div className="mb-4 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-300">
@@ -399,29 +514,50 @@ export default function FlightForm({
             value={actualOutUtc}
             onChange={setActualOutUtc}
             hint="Gate departure"
-            referenceDate={scheduledOutUtc.slice(0, 10) || undefined}
+            referenceDate={refDate}
+            timezone={timezone}
+            timezoneAbbr={timezoneAbbr}
           />
           <ActualTimeInput
             label="OFF"
             value={actualOffUtc}
             onChange={setActualOffUtc}
             hint="Wheels off"
-            referenceDate={scheduledOutUtc.slice(0, 10) || undefined}
+            referenceDate={refDate}
+            timezone={timezone}
+            timezoneAbbr={timezoneAbbr}
           />
           <ActualTimeInput
             label="ON"
             value={actualOnUtc}
             onChange={setActualOnUtc}
             hint="Wheels on"
-            referenceDate={scheduledOutUtc.slice(0, 10) || undefined}
+            referenceDate={refDate}
+            timezone={timezone}
+            timezoneAbbr={timezoneAbbr}
           />
           <ActualTimeInput
             label="IN"
             value={actualInUtc}
             onChange={setActualInUtc}
             hint="Gate arrival"
-            referenceDate={scheduledOutUtc.slice(0, 10) || undefined}
+            referenceDate={refDate}
+            timezone={timezone}
+            timezoneAbbr={timezoneAbbr}
           />
+        </div>
+
+        {/* Live block / flight time preview */}
+        <div className="mt-3 pt-3 border-t border-border flex gap-6 text-xs text-foreground/50">
+          <span>
+            Block:{" "}
+            <span className="font-mono text-foreground/80">{blockDisplay}</span>
+          </span>
+          <span className="text-foreground/20">|</span>
+          <span>
+            Flight:{" "}
+            <span className="font-mono text-foreground/80">{flightDisplay}</span>
+          </span>
         </div>
       </Card>
 
@@ -587,6 +723,17 @@ export default function FlightForm({
             placeholder="28R"
           />
         </div>
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <Input
+            label="Night Time (hrs)"
+            type="number"
+            min="0"
+            step="0.01"
+            value={nightTimeHrs}
+            onChange={(e) => setNightTimeHrs(e.target.value)}
+            placeholder="0.00 — auto-filled from FR24"
+          />
+        </div>
 
         {metar?.suggestion?.options && metar.suggestion.options.length > 1 && (
           <div className="mt-3 flex gap-2 flex-wrap">
@@ -652,13 +799,18 @@ export default function FlightForm({
         </div>
       )}
 
-      <div className="flex gap-3 pb-8">
+      <div className="flex gap-3 pb-8 items-center">
         <Button size="lg" onClick={handleSave} loading={saving}>
           {isEdit ? "Save Changes" : "Save Flight"}
         </Button>
         <Button variant="secondary" onClick={() => router.back()}>
           Cancel
         </Button>
+        {isDirty && (
+          <span className="text-xs text-foreground/40 flex items-center gap-1 ml-1">
+            <span className="text-yellow-400/70">●</span> Unsaved changes
+          </span>
+        )}
       </div>
     </div>
   );

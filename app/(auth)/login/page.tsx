@@ -30,7 +30,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-8 shadow-2xl">
+    <div className="bg-surface border border-border rounded-xl p-6 md:p-8 shadow-2xl w-full max-w-sm">
       <h1 className="text-lg font-semibold text-foreground mb-6">Sign in to your logbook</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input

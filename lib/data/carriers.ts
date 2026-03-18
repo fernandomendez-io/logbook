@@ -294,7 +294,7 @@ export function prefixFlight(
 ): string {
   const prefix = getDisplayPrefix(operatingCarrier);
   if (!prefix) return flightNumber;
-  if (/^[A-Z0-9]{2}\d/i.test(flightNumber)) return flightNumber;
+  if (/^[A-Za-z]{2}\d/.test(flightNumber)) return flightNumber;
   return `${prefix}${flightNumber}`;
 }
 

@@ -20,9 +20,7 @@ export async function fetchMetarAtTime(
   atTimeUtc: Date,
 ): Promise<RawMETARResult | null> {
   try {
-    // Pass the target time as the reference date so the API returns historical METARs
-    // around the actual landing time, not just the last 2 hours from now.
-    // AWC date format: YYYYMMDDTHHmmZ (compact ISO)
+    // AWC date format: YYYYMMDDTHHmmZ
     const dateStr = atTimeUtc.toISOString().replace(/[-:]/g, '').slice(0, 13) + 'Z'
     const url = `${BASE_URL}/metar?ids=${stationIcao}&format=json&date=${dateStr}&hours=2`
 
@@ -30,47 +28,49 @@ export async function fetchMetarAtTime(
     if (!res.ok) throw new Error(`METAR fetch failed: ${res.status}`)
 
     const data: AWCMetarRecord[] = await res.json()
-    if (!data || data.length === 0) return null
+    if (!Array.isArray(data) || data.length === 0) return null
 
-    // Sort by observation time descending, pick the most recent one at or before atTimeUtc
     const target = atTimeUtc.getTime()
+
+    // obsTime is Unix seconds — multiply by 1000 for milliseconds
     const sorted = data
-      .map(r => ({ ...r, ts: new Date(r.obsTime).getTime() }))
+      .map(r => ({ ...r, ts: r.obsTime * 1000 }))
       .filter(r => r.ts <= target)
       .sort((a, b) => b.ts - a.ts)
 
     if (sorted.length === 0) {
-      // No obs before the time — take the earliest available
-      const earliest = [...data].sort((a, b) =>
-        new Date(a.obsTime).getTime() - new Date(b.obsTime).getTime()
-      )[0]
+      // No obs before the target time — take the earliest available
+      const earliest = [...data].sort((a, b) => a.obsTime - b.obsTime)[0]
       return {
-        stationId: earliest.stationId,
-        observationTime: earliest.obsTime,
+        stationId: earliest.icaoId ?? stationIcao,
+        observationTime: new Date(earliest.obsTime * 1000).toISOString(),
         rawOb: earliest.rawOb,
       }
     }
 
     const closest = sorted[0]
     return {
-      stationId: closest.stationId,
-      observationTime: closest.obsTime,
+      stationId: closest.icaoId ?? stationIcao,
+      observationTime: new Date(closest.obsTime * 1000).toISOString(),
       rawOb: closest.rawOb,
     }
   } catch (err) {
-    console.error('Aviation Weather fetch error:', err)
+    console.error('[METAR] Aviation Weather fetch error:', err)
     return null
   }
 }
 
+// AWC JSON format — obsTime is Unix timestamp in SECONDS (not a string)
 interface AWCMetarRecord {
-  stationId: string
-  obsTime: string
-  rawOb: string
+  icaoId: string        // ICAO station identifier
+  stationId?: string    // sometimes same as icaoId
+  obsTime: number       // Unix timestamp in seconds
+  rawOb: string         // raw METAR string
   temp?: number
   dewp?: number
   wdir?: number
   wspd?: number
+  wgst?: number | null
   visib?: number
   altim?: number
 }

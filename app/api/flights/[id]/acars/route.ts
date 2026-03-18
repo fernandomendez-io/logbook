@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { fetchACARSTimes } from '@/lib/api/fr24'
+import { fetchAAGateTimes, stripCarrierPrefix } from '@/lib/api/aa'
 import { prefixFlightForSearch } from '@/lib/data/carriers'
 import { blockHours, flightHours } from '@/lib/utils/format'
 import { extractFlightPoints, calculateNightTimeHrs } from '@/lib/utils/night-time'
@@ -55,6 +56,7 @@ export async function POST(
   let fr24FlightId: string | null = null
   let fromCache = false
   let rawResponse: unknown = null
+  const numericFlight = stripCarrierPrefix(flight.flight_number)
 
   if (cached) {
     fromCache = true
@@ -76,37 +78,54 @@ export async function POST(
       airspaceTransitions: cached.airspace_transitions,
     }
   } else {
-    const result = await fetchACARSTimes(searchFlight, date, origin ?? undefined)
-    if (!result.times) {
+    // Fetch FR24 and AA in parallel — AA gate times take priority for OUT/IN
+    const [result, aa] = await Promise.all([
+      fetchACARSTimes(searchFlight, date, origin ?? undefined),
+      fetchAAGateTimes(numericFlight, date),
+    ])
+
+    if (!result.times && !aa) {
       return NextResponse.json({ error: 'No tracking data found', debug: result.raw }, { status: 404 })
     }
+
     fr24FlightId = result.fr24FlightId
     rawResponse = result.raw
-    t = result.times as any
+    t = {
+      ...(result.times ?? {}),
+      outUtc: aa?.outUtc ?? result.times?.outUtc ?? null,
+      inUtc:  aa?.inUtc  ?? result.times?.inUtc  ?? null,
+    }
 
     await supabase.from('acars_cache').upsert({
       flight_number:        flight.flight_number,
       flight_date:          date,
       origin_icao:          origin ?? '',
-      out_utc:              result.times.outUtc,
-      off_utc:              result.times.offUtc,
-      on_utc:               result.times.onUtc,
-      in_utc:               result.times.inUtc,
-      tail_number:          result.times.tailNumber,
-      aircraft_type:        result.times.aircraftType,
-      origin_iata:          result.times.origin,
-      dest_iata:            result.times.destination,
-      departure_gate:       result.times.departureGate  ?? null,
-      arrival_gate:         result.times.arrivalGate    ?? null,
-      departure_runway:     result.times.departureRunway ?? null,
-      landing_runway:       result.times.landingRunway   ?? null,
-      cruise_gspeed_kts:    result.times.cruiseGspeedKts ?? null,
-      cruise_alt_ft:        result.times.cruiseAltFt     ?? null,
-      descent_start_utc:    result.times.descentStartUtc ?? null,
-      airspace_transitions: result.times.airspaceTransitions ?? [],
+      out_utc:              t.outUtc,
+      off_utc:              t.offUtc,
+      on_utc:               t.onUtc,
+      in_utc:               t.inUtc,
+      tail_number:          t.tailNumber,
+      aircraft_type:        t.aircraftType,
+      origin_iata:          t.origin,
+      dest_iata:            t.destination,
+      departure_gate:       t.departureGate   ?? null,
+      arrival_gate:         t.arrivalGate     ?? null,
+      departure_runway:     t.departureRunway ?? null,
+      landing_runway:       t.landingRunway   ?? null,
+      cruise_gspeed_kts:    t.cruiseGspeedKts ?? null,
+      cruise_alt_ft:        t.cruiseAltFt     ?? null,
+      descent_start_utc:    t.descentStartUtc ?? null,
+      airspace_transitions: t.airspaceTransitions ?? [],
       fr24_flight_id:       result.fr24FlightId,
       raw_response:         result.raw as any,
     }, { onConflict: 'flight_number,flight_date,origin_icao' })
+  }
+
+  // AA always overrides OUT/IN even on cached paths — gate data is authoritative
+  if (fromCache) {
+    const aa = await fetchAAGateTimes(numericFlight, date)
+    if (aa?.outUtc) t.outUtc = aa.outUtc
+    if (aa?.inUtc)  t.inUtc  = aa.inUtc
   }
 
   const blockActual = t.outUtc && t.inUtc ? blockHours(t.outUtc, t.inUtc) : null

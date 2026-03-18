@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchACARSTimes } from "@/lib/api/fr24";
+import { fetchAAGateTimes, stripCarrierPrefix } from "@/lib/api/aa";
 import { prefixFlight, prefixFlightForSearch } from "@/lib/data/carriers";
 
 export async function GET(request: NextRequest) {
@@ -46,12 +47,16 @@ export async function GET(request: NextRequest) {
   // Cast to any: generated types lag behind the 0004_fr24_fields migration
   const cached = cachedRaw as any;
 
+  const numericFlight = stripCarrierPrefix(flightNumber);
+
   if (cached) {
+    // AA gate times always override cached FR24 gate times
+    const aa = await fetchAAGateTimes(numericFlight, date);
     return NextResponse.json({
-      outUtc: cached.out_utc,
+      outUtc: aa?.outUtc ?? cached.out_utc,
       offUtc: cached.off_utc,
       onUtc: cached.on_utc,
-      inUtc: cached.in_utc,
+      inUtc: aa?.inUtc ?? cached.in_utc,
       tailNumber: cached.tail_number,
       aircraftType: cached.aircraft_type,
       origin: cached.origin_iata,
@@ -74,10 +79,14 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const result = await fetchACARSTimes(searchFlight, date, origin || undefined);
+  // Fetch FR24 and AA in parallel — AA gate times take priority for OUT/IN
+  const [result, aa] = await Promise.all([
+    fetchACARSTimes(searchFlight, date, origin || undefined),
+    fetchAAGateTimes(numericFlight, date),
+  ]);
   const { times, raw, fr24FlightId, selectedIndex, totalLegs, status } = result;
 
-  if (!times) {
+  if (!times && !aa) {
     return NextResponse.json(
       {
         error: "Flight not found or no tracking data available",
@@ -87,27 +96,33 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const mergedTimes = {
+    ...(times ?? {}),
+    outUtc: aa?.outUtc ?? times?.outUtc ?? null,
+    inUtc:  aa?.inUtc  ?? times?.inUtc  ?? null,
+  };
+
   await supabase.from("acars_cache").upsert(
     {
       flight_number: resolvedFlight,
       flight_date: date,
-      origin_icao: origin || times.origin || "",
-      out_utc: times.outUtc,
-      off_utc: times.offUtc,
-      on_utc: times.onUtc,
-      in_utc: times.inUtc,
-      tail_number: times.tailNumber,
-      aircraft_type: times.aircraftType,
-      origin_iata: times.origin,
-      dest_iata: times.destination,
-      departure_gate: times.departureGate ?? null,
-      arrival_gate: times.arrivalGate ?? null,
-      departure_runway: times.departureRunway ?? null,
-      landing_runway: times.landingRunway ?? null,
-      cruise_gspeed_kts: times.cruiseGspeedKts ?? null,
-      cruise_alt_ft: times.cruiseAltFt ?? null,
-      descent_start_utc: times.descentStartUtc ?? null,
-      airspace_transitions: times.airspaceTransitions ?? [],
+      origin_icao: origin || mergedTimes.origin || "",
+      out_utc: mergedTimes.outUtc,
+      off_utc: mergedTimes.offUtc,
+      on_utc: mergedTimes.onUtc,
+      in_utc: mergedTimes.inUtc,
+      tail_number: mergedTimes.tailNumber,
+      aircraft_type: mergedTimes.aircraftType,
+      origin_iata: mergedTimes.origin,
+      dest_iata: mergedTimes.destination,
+      departure_gate: mergedTimes.departureGate ?? null,
+      arrival_gate: mergedTimes.arrivalGate ?? null,
+      departure_runway: mergedTimes.departureRunway ?? null,
+      landing_runway: mergedTimes.landingRunway ?? null,
+      cruise_gspeed_kts: mergedTimes.cruiseGspeedKts ?? null,
+      cruise_alt_ft: mergedTimes.cruiseAltFt ?? null,
+      descent_start_utc: mergedTimes.descentStartUtc ?? null,
+      airspace_transitions: mergedTimes.airspaceTransitions ?? [],
       fr24_flight_id: fr24FlightId,
       raw_response: raw as any,
     },
@@ -115,7 +130,7 @@ export async function GET(request: NextRequest) {
   );
 
   return NextResponse.json({
-    ...times,
+    ...mergedTimes,
     fr24FlightId,
     source: "live",
     debug: { selectedIndex, totalLegs },

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "WebSearch",
+      "WebFetch(domain:fr24api.flightradar24.com)",
+      "WebFetch(domain:www.flightradar24.com)",
+      "Bash(ls -la /c/Users/ferna/dev/logbook/app/'\\(app\\)'/flights/'[id]')"
+    ]
+  }
+}

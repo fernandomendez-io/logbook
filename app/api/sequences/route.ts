@@ -1,0 +1,80 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { parseSequence } from '@/lib/parsers/sequence-parser'
+import { blockHours } from '@/lib/utils/format'
+
+export async function GET(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data, error } = await supabase
+    .from('sequences')
+    .select('*, flights(id)')
+    .eq('pilot_id', user.id)
+    .order('report_date', { ascending: false })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ sequences: data })
+}
+
+export async function POST(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await request.json()
+  const { rawText, confirmedFlights } = body
+
+  if (!rawText) return NextResponse.json({ error: 'rawText required' }, { status: 400 })
+
+  const parsed = parseSequence(rawText)
+
+  // Insert sequence
+  const { data: seq, error: seqErr } = await supabase
+    .from('sequences')
+    .insert({
+      pilot_id: user.id,
+      sequence_number: parsed.sequenceNumber,
+      raw_text: rawText,
+      report_date: parsed.reportDate,
+      release_date: parsed.releaseDate,
+      domicile: parsed.domicile,
+      status: 'active',
+    })
+    .select()
+    .single()
+
+  if (seqErr) return NextResponse.json({ error: seqErr.message }, { status: 500 })
+
+  // Insert flights
+  const flights = confirmedFlights || parsed.allFlights
+  if (flights.length > 0) {
+    const flightRows = flights.map((f: any) => {
+      const scheduledOut = `${f.date}T${f.scheduledOut.slice(0, 2)}:${f.scheduledOut.slice(2, 4)}:00Z`
+      const scheduledIn = `${f.date}T${f.scheduledIn.slice(0, 2)}:${f.scheduledIn.slice(2, 4)}:00Z`
+      const scheduled = blockHours(scheduledOut, scheduledIn)
+
+      return {
+        sequence_id: seq.id,
+        pilot_id: user.id,
+        flight_number: f.flightNumber,
+        origin_icao: f.originIcao,
+        destination_icao: f.destinationIcao,
+        scheduled_out_utc: scheduledOut,
+        scheduled_in_utc: scheduledIn,
+        block_scheduled_hrs: scheduled > 0 ? scheduled : null,
+        aircraft_type: f.aircraftType || null,
+        tail_number: f.tailNumber || null,
+        is_deadhead: f.isDeadhead,
+        is_cancelled: f.isCancelled,
+        cross_country: true,
+      }
+    })
+
+    const { error: flightErr } = await supabase.from('flights').insert(flightRows)
+    if (flightErr) console.error('Flight insert error:', flightErr)
+  }
+
+  return NextResponse.json({ sequence: seq, flightCount: flights.length })
+}

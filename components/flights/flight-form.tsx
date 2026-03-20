@@ -734,7 +734,7 @@ export default function FlightForm({
             step="0.01"
             value={nightTimeHrs}
             onChange={(e) => setNightTimeHrs(e.target.value)}
-            placeholder="0.00 — auto-filled from FR24"
+            placeholder="0.00 — auto-filled from FlightAware"
           />
         </div>
 

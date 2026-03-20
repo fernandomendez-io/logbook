@@ -69,9 +69,15 @@ export async function POST(request: NextRequest) {
   // Insert flights
   const flights = confirmedFlights || parsed.allFlights
   if (flights.length > 0) {
+    // Sequence parser outputs 3-letter IATA codes (e.g. "ORD") but airport-timezones
+    // uses 4-letter ICAO keys (e.g. "KORD"). Convert CONUS codes by prepending "K".
+    // Alaska/Hawaii airports already have 4-letter codes in the timezone map (PANC, PHNL, etc.)
+    // so they pass through unchanged.
+    const toIcao = (code: string) => code.length === 3 ? `K${code}` : code
+
     const flightRows = flights.map((f: any) => {
-      const originTz = getAirportTimezone(f.originIcao) ?? 'UTC'
-      const destTz   = getAirportTimezone(f.destinationIcao) ?? 'UTC'
+      const originTz = getAirportTimezone(toIcao(f.originIcao)) ?? 'UTC'
+      const destTz   = getAirportTimezone(toIcao(f.destinationIcao)) ?? 'UTC'
       const scheduledOut = localHHMMtoUtc(f.date, f.scheduledOut, originTz)
       const scheduledIn  = localHHMMtoUtc(f.date, f.scheduledIn,  destTz, f.scheduledOut)
       const scheduled = blockHours(scheduledOut, scheduledIn)

@@ -6,6 +6,25 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate, decimalToHHMM } from '@/lib/utils/format'
 import { FetchTimesButton } from '@/components/flights/fetch-times-button'
 import { DeleteFlightButton } from '@/components/flights/delete-flight-button'
+import { DeleteSequenceButton } from '@/components/sequences/delete-sequence-button'
+import { getAirportTimezone } from '@/lib/data/airport-timezones'
+import { utcDtToLocal, getTimezoneAbbr } from '@/lib/utils/timezone'
+
+/** Convert IATA or ICAO code to 4-letter ICAO for timezone lookup */
+function toIcao(code: string | null | undefined): string {
+  if (!code) return ''
+  return code.length === 3 ? `K${code}` : code
+}
+
+/** Return "HH:MM tz" local time for a UTC ISO string, or null */
+function fmtLocal(utcIso: string | null | undefined, iataOrIcao: string | null | undefined): string | null {
+  if (!utcIso || !iataOrIcao) return null
+  const tz = getAirportTimezone(toIcao(iataOrIcao))
+  if (!tz) return null
+  const local = utcDtToLocal(utcIso.slice(0, 16), tz)
+  if (!local) return null
+  return `${local.slice(11, 16)} ${getTimezoneAbbr(tz)}`
+}
 
 export default async function SequenceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -30,6 +49,7 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
 
   const totalScheduled = flights?.reduce((sum, f) => sum + (f.block_scheduled_hrs || 0), 0) || 0
   const totalActual = flights?.reduce((sum, f) => sum + (f.block_actual_hrs || 0), 0) || 0
+  const flightCount = flights?.filter(f => !f.is_cancelled && !f.is_deadhead).length || 0
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -46,12 +66,13 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
         <Badge variant={sequence.status === 'active' ? 'green' : 'gray'} className="ml-auto">
           {sequence.status}
         </Badge>
+        <DeleteSequenceButton sequenceId={sequence.id} flightCount={flightCount} />
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Flights', value: flights?.filter(f => !f.is_cancelled && !f.is_deadhead).length || 0 },
+          { label: 'Flights', value: flightCount },
           { label: 'Deadheads', value: flights?.filter(f => f.is_deadhead).length || 0 },
           { label: 'Sched Block', value: decimalToHHMM(totalScheduled) },
           { label: 'Actual Block', value: totalActual > 0 ? decimalToHHMM(totalActual) : '—' },
@@ -77,8 +98,8 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
               <tr className="border-b border-border text-xs text-foreground/40 uppercase tracking-wider">
                 <th className="text-left pb-3 pr-4">Flight</th>
                 <th className="text-left pb-3 pr-4">Route</th>
-                <th className="text-left pb-3 pr-4">Out</th>
-                <th className="text-left pb-3 pr-4">In</th>
+                <th className="text-left pb-3 pr-4">Out (LCL)</th>
+                <th className="text-left pb-3 pr-4">In (LCL)</th>
                 <th className="text-left pb-3 pr-4">Block</th>
                 <th className="text-left pb-3 pr-4">A/C</th>
                 <th className="text-left pb-3 pr-4">Approach</th>
@@ -87,53 +108,65 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
-              {flights?.map(flight => (
-                <tr key={flight.id} className={flight.is_cancelled ? 'opacity-40' : 'hover:bg-surface-raised'}>
-                  <td className="py-3 pr-4">
-                    <Link href={`/flights/${flight.id}`} className="font-mono font-medium text-green-primary hover:underline">
-                      {flight.flight_number}
-                    </Link>
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-foreground/70">{flight.origin_icao}–{flight.destination_icao}</td>
-                  <td className="py-3 pr-4 font-mono text-xs">
-                    {flight.actual_out_utc
-                      ? <span className="text-green-primary">{new Date(flight.actual_out_utc).toISOString().slice(11, 16)}Z</span>
-                      : <span className="text-foreground/30">{new Date(flight.scheduled_out_utc).toISOString().slice(11, 16)}Z</span>}
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-xs">
-                    {flight.actual_in_utc
-                      ? <span className="text-green-primary">{new Date(flight.actual_in_utc).toISOString().slice(11, 16)}Z</span>
-                      : <span className="text-foreground/30">{new Date(flight.scheduled_in_utc).toISOString().slice(11, 16)}Z</span>}
-                  </td>
-                  <td className="py-3 pr-4 font-mono text-xs">
-                    {flight.block_actual_hrs
-                      ? decimalToHHMM(flight.block_actual_hrs)
-                      : flight.block_scheduled_hrs
-                      ? <span className="text-foreground/40">{decimalToHHMM(flight.block_scheduled_hrs)}</span>
-                      : '—'}
-                  </td>
-                  <td className="py-3 pr-4">
-                    {flight.aircraft_type ? <Badge variant="outline">{flight.aircraft_type}</Badge> : <span className="text-foreground/30">—</span>}
-                  </td>
-                  <td className="py-3 pr-4">
-                    {flight.approach_type
-                      ? <Badge variant="green">{flight.approach_type}</Badge>
-                      : <span className="text-foreground/30">—</span>}
-                  </td>
-                  <td className="py-3 pr-4">
-                    {flight.is_cancelled ? <Badge variant="red">CXL</Badge> :
-                     flight.is_deadhead ? <Badge variant="blue">DH</Badge> :
-                     flight.actual_in_utc ? <Badge variant="green">Done</Badge> :
-                     <Badge variant="gray">Sched</Badge>}
-                  </td>
-                  <td className="py-3">
-                    <div className="flex items-center gap-1">
-                      {!flight.is_cancelled && <FetchTimesButton flightId={flight.id} hasActualTimes={!!flight.actual_out_utc} />}
-                      <DeleteFlightButton flightId={flight.id} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {flights?.map(flight => {
+                const outLocal = fmtLocal(
+                  flight.actual_out_utc ?? flight.scheduled_out_utc,
+                  flight.origin_icao,
+                )
+                const inLocal = fmtLocal(
+                  flight.actual_in_utc ?? flight.scheduled_in_utc,
+                  flight.destination_icao,
+                )
+                const hasActual = !!flight.actual_out_utc
+
+                return (
+                  <tr key={flight.id} className={flight.is_cancelled ? 'opacity-40' : 'hover:bg-surface-raised'}>
+                    <td className="py-3 pr-4">
+                      <Link href={`/flights/${flight.id}`} className="font-mono font-medium text-green-primary hover:underline">
+                        {flight.flight_number}
+                      </Link>
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-foreground/70">{flight.origin_icao}–{flight.destination_icao}</td>
+                    <td className="py-3 pr-4 font-mono text-xs">
+                      {outLocal
+                        ? <span className={hasActual ? 'text-green-primary' : 'text-foreground/40'}>{outLocal}</span>
+                        : <span className="text-foreground/20">—</span>}
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs">
+                      {inLocal
+                        ? <span className={!!flight.actual_in_utc ? 'text-green-primary' : 'text-foreground/40'}>{inLocal}</span>
+                        : <span className="text-foreground/20">—</span>}
+                    </td>
+                    <td className="py-3 pr-4 font-mono text-xs">
+                      {flight.block_actual_hrs
+                        ? decimalToHHMM(flight.block_actual_hrs)
+                        : flight.block_scheduled_hrs
+                        ? <span className="text-foreground/40">{decimalToHHMM(flight.block_scheduled_hrs)}</span>
+                        : '—'}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {flight.aircraft_type ? <Badge variant="outline">{flight.aircraft_type}</Badge> : <span className="text-foreground/30">—</span>}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {flight.approach_type
+                        ? <Badge variant="green">{flight.approach_type}</Badge>
+                        : <span className="text-foreground/30">—</span>}
+                    </td>
+                    <td className="py-3 pr-4">
+                      {flight.is_cancelled ? <Badge variant="red">CXL</Badge> :
+                       flight.is_deadhead ? <Badge variant="blue">DH</Badge> :
+                       flight.actual_in_utc ? <Badge variant="green">Done</Badge> :
+                       <Badge variant="gray">Sched</Badge>}
+                    </td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-1">
+                        {!flight.is_cancelled && <FetchTimesButton flightId={flight.id} hasActualTimes={!!flight.actual_out_utc} />}
+                        <DeleteFlightButton flightId={flight.id} />
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

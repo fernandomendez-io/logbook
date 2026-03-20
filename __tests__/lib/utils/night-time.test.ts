@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateNightTimeHrs, extractFlightPoints } from '@/lib/utils/night-time'
+import { calculateNightTimeHrs } from '@/lib/utils/night-time'
 
 describe('calculateNightTimeHrs', () => {
   it('returns 0 for fewer than 2 points', () => {
@@ -33,51 +33,5 @@ describe('calculateNightTimeHrs', () => {
     ]
     const result = calculateNightTimeHrs(points)
     expect(result).toBe(Math.round(result * 100) / 100)
-  })
-})
-
-describe('extractFlightPoints', () => {
-  it('returns empty array for null input', () => {
-    expect(extractFlightPoints(null)).toEqual([])
-  })
-
-  it('returns empty array for missing events structure', () => {
-    expect(extractFlightPoints({})).toEqual([])
-    expect(extractFlightPoints({ events: {} })).toEqual([])
-  })
-
-  it('filters events missing lat/lon', () => {
-    const raw = {
-      events: {
-        data: [{
-          events: [
-            { lat: 40, lon: -74, timestamp: '2024-01-15T10:00:00Z' },
-            { lat: null, lon: -74, timestamp: '2024-01-15T10:05:00Z' },
-            { lat: 41, lon: null, timestamp: '2024-01-15T10:10:00Z' },
-            { lat: 42, lon: -75, timestamp: '2024-01-15T10:15:00Z' },
-          ]
-        }]
-      }
-    }
-    const points = extractFlightPoints(raw)
-    expect(points).toHaveLength(2)
-    expect(points[0].lat).toBe(40)
-    expect(points[1].lat).toBe(42)
-  })
-
-  it('sorts points by timestamp', () => {
-    const raw = {
-      events: {
-        data: [{
-          events: [
-            { lat: 42, lon: -75, timestamp: '2024-01-15T10:15:00Z' },
-            { lat: 40, lon: -74, timestamp: '2024-01-15T10:00:00Z' },
-          ]
-        }]
-      }
-    }
-    const points = extractFlightPoints(raw)
-    expect(points[0].lat).toBe(40)
-    expect(points[1].lat).toBe(42)
   })
 })

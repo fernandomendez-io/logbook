@@ -7,6 +7,24 @@ import { decimalToHHMM, formatDate } from '@/lib/utils/format'
 import { TimeDisplay } from '@/components/ui/time-display'
 import { FlightMap } from '@/components/flights/flight-map'
 import { FlightProfile } from '@/components/flights/flight-profile'
+import { getAirportTimezone } from '@/lib/data/airport-timezones'
+import { utcDtToLocal, getTimezoneAbbr } from '@/lib/utils/timezone'
+import { deriveFlightStats, type TrackPoint } from '@/lib/api/flightaware'
+
+/** Convert IATA-or-ICAO code to 4-letter ICAO for timezone lookup */
+function toIcao(code: string | null): string {
+  if (!code) return ''
+  return code.length === 3 ? `K${code}` : code
+}
+
+/** Format a UTC ISO timestamp as HH:MM in a given IANA timezone.
+ *  Returns { time: "HH:MM", abbr: "CDT" } or null. */
+function localTime(utcIso: string | null, tz: string | null): { time: string; abbr: string } | null {
+  if (!utcIso || !tz) return null
+  const local = utcDtToLocal(utcIso.slice(0, 16), tz)
+  if (!local) return null
+  return { time: local.slice(11, 16), abbr: getTimezoneAbbr(tz) }
+}
 
 export default async function FlightDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -33,23 +51,48 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
     copilotName = cp
   }
 
-  // Parse FR24 raw data stored in JSONB
-  const fr24Raw = (flight as any).fr24_raw as Record<string, any> | null
-  const rawEvents: any[] = fr24Raw?.events?.data?.[0]?.events ?? []
-
-  // Cast new columns (added in migrations 0004 + 0005)
   const f = flight as any
 
-  const timeRow = (label: string, value: string | null, isActual = false) => (
+  // ── Track & stats ────────────────────────────────────────────────────────
+  const trackPoints: TrackPoint[] = (f.fa_track as TrackPoint[] | null) ?? []
+  const hasTrack = trackPoints.length >= 2
+  const stats = trackPoints.length >= 5 ? deriveFlightStats(trackPoints) : null
+
+  const hasProfileData = !!(f.actual_off_utc || f.actual_on_utc)
+
+  // Effective cruise values: prefer stored (may have been overridden by AA), fallback to derived
+  const cruiseAltFt     = f.cruise_alt_ft     ?? stats?.cruiseAltFt     ?? null
+  const cruiseGspeedKts = f.cruise_gspeed_kts ?? stats?.cruiseGspeedKts ?? null
+  const descentStartUtc = f.descent_start_utc ?? stats?.descentStartUtc ?? null
+
+  // ── Timezones ────────────────────────────────────────────────────────────
+  const originTz = getAirportTimezone(toIcao(flight.origin_icao))
+  const destTz   = getAirportTimezone(toIcao(flight.destination_icao))
+
+  const outLocal  = localTime(flight.actual_out_utc,  originTz)
+  const offLocal  = localTime(flight.actual_off_utc,  originTz)
+  const onLocal   = localTime(flight.actual_on_utc,   destTz)
+  const inLocal   = localTime(flight.actual_in_utc,   destTz)
+  const sOutLocal = localTime(flight.scheduled_out_utc, originTz)
+  const sInLocal  = localTime(flight.scheduled_in_utc,  destTz)
+
+  // ── Layout helpers ───────────────────────────────────────────────────────
+  const timeBlock = (
+    label: string,
+    utcIso: string | null,
+    local: { time: string; abbr: string } | null,
+    isActual = false,
+  ) => (
     <div key={label}>
-      <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">{label}</p>
-      <TimeDisplay iso={value} isActual={isActual} />
+      <p className="text-xs text-foreground/40 uppercase tracking-wider mb-1">{label}</p>
+      <TimeDisplay iso={utcIso} isActual={isActual} />
+      {local && (
+        <p className="text-xs font-mono text-foreground/50 mt-0.5">
+          {local.time} <span className="text-foreground/30">{local.abbr}</span>
+        </p>
+      )}
     </div>
   )
-
-  const hasFr24Data = !!(f.cruise_alt_ft || f.cruise_gspeed_kts || f.descent_start_utc ||
-    (f.airspace_transitions && f.airspace_transitions.length > 0))
-  const hasProfileData = !!(f.actual_off_utc || f.actual_on_utc)
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -87,6 +130,9 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             {f.departure_runway && (
               <p className="text-xs font-mono text-green-primary/60 mt-0.5">Rwy {f.departure_runway}</p>
             )}
+            {sOutLocal && (
+              <p className="text-xs font-mono text-foreground/30 mt-1">{sOutLocal.time} <span className="text-foreground/20">{sOutLocal.abbr}</span></p>
+            )}
           </div>
           <div className="flex flex-col items-center gap-1">
             <svg className="w-10 h-4 text-green-primary" fill="none" viewBox="0 0 40 16">
@@ -94,6 +140,9 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             </svg>
             {flight.aircraft_type && <Badge variant="outline">{flight.aircraft_type}</Badge>}
             {flight.tail_number && <span className="text-xs font-mono text-foreground/40">{flight.tail_number}</span>}
+            {stats?.distanceNm ? (
+              <span className="text-xs font-mono text-foreground/30">{stats.distanceNm} nm</span>
+            ) : null}
           </div>
           <div className="text-center">
             <p className="text-4xl font-bold font-mono text-foreground">{flight.destination_icao}</p>
@@ -106,14 +155,39 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             {flight.diverted_to_icao && (
               <p className="text-sm text-red-400 font-mono">→ {flight.diverted_to_icao}</p>
             )}
+            {sInLocal && (
+              <p className="text-xs font-mono text-foreground/30 mt-1">{sInLocal.time} <span className="text-foreground/20">{sInLocal.abbr}</span></p>
+            )}
           </div>
         </div>
       </Card>
 
+      {/* Flight stats bar */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Distance', value: stats.distanceNm ? `${stats.distanceNm} nm` : '—' },
+            { label: 'Max Altitude', value: stats.maxAltFt ? `FL${Math.round(stats.maxAltFt / 100)}` : '—' },
+            { label: 'Avg Cruise Spd', value: stats.avgCruiseGspeedKts ? `${stats.avgCruiseGspeedKts} kt` : '—' },
+            {
+              label: 'Climb / Desc',
+              value: (stats.climbRateFpm || stats.descentRateFpm)
+                ? `${stats.climbRateFpm ? `+${stats.climbRateFpm}` : '—'} / ${stats.descentRateFpm ? `-${stats.descentRateFpm}` : '—'} fpm`
+                : '—'
+            },
+          ].map(s => (
+            <Card key={s.label} className="py-3 px-4">
+              <p className="text-xs text-foreground/40 uppercase tracking-wider">{s.label}</p>
+              <p className="text-sm font-mono font-semibold text-green-primary mt-1">{s.value}</p>
+            </Card>
+          ))}
+        </div>
+      )}
+
       {/* Map */}
-      {rawEvents.length >= 2 && (
+      {hasTrack && (
         <FlightMap
-          rawEvents={rawEvents}
+          trackPoints={trackPoints}
           originIcao={flight.origin_icao ?? ''}
           destIcao={flight.destination_icao ?? ''}
         />
@@ -129,13 +203,12 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
               offUtc={f.actual_off_utc}
               onUtc={f.actual_on_utc}
               inUtc={f.actual_in_utc}
-              descentStartUtc={f.descent_start_utc}
-              cruiseAltFt={f.cruise_alt_ft}
-              cruiseGspeedKts={f.cruise_gspeed_kts}
-              airspaceTransitions={f.airspace_transitions ?? []}
+              descentStartUtc={descentStartUtc}
+              cruiseAltFt={cruiseAltFt}
+              cruiseGspeedKts={cruiseGspeedKts}
               departureRunway={f.departure_runway}
               landingRunway={f.approach_runway}
-              rawEvents={rawEvents}
+              trackPoints={trackPoints}
             />
           </div>
         </Card>
@@ -143,12 +216,15 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
 
       {/* Times */}
       <Card>
-        <CardHeader><CardTitle>Times (UTC)</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Times</CardTitle>
+          <span className="text-xs text-foreground/30 font-mono ml-auto">Zulu / Local</span>
+        </CardHeader>
         <div className="grid grid-cols-4 gap-6 mb-4">
-          {timeRow('Sched OUT', flight.scheduled_out_utc)}
-          {timeRow('Sched IN', flight.scheduled_in_utc)}
+          {timeBlock('Sched OUT', flight.scheduled_out_utc, sOutLocal)}
+          {timeBlock('Sched IN',  flight.scheduled_in_utc,  sInLocal)}
           <div>
-            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Block (Sched)</p>
+            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-1">Block (Sched)</p>
             <p className="text-lg font-mono font-bold text-foreground/50">
               {flight.block_scheduled_hrs ? decimalToHHMM(flight.block_scheduled_hrs) : '—'}
             </p>
@@ -156,26 +232,26 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
           <div />
         </div>
         <div className="grid grid-cols-4 gap-6 pt-4 border-t border-border">
-          {timeRow('OUT', flight.actual_out_utc, true)}
-          {timeRow('OFF', flight.actual_off_utc, true)}
-          {timeRow('ON',  flight.actual_on_utc,  true)}
-          {timeRow('IN',  flight.actual_in_utc,  true)}
+          {timeBlock('OUT', flight.actual_out_utc, outLocal, true)}
+          {timeBlock('OFF', flight.actual_off_utc, offLocal, true)}
+          {timeBlock('ON',  flight.actual_on_utc,  onLocal,  true)}
+          {timeBlock('IN',  flight.actual_in_utc,  inLocal,  true)}
         </div>
         <div className="grid grid-cols-3 gap-6 pt-4 border-t border-border mt-4">
           <div>
-            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Block (Actual)</p>
+            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-1">Block (Actual)</p>
             <p className="text-lg font-mono font-bold text-green-primary">
               {flight.block_actual_hrs ? decimalToHHMM(flight.block_actual_hrs) : '—'}
             </p>
           </div>
           <div>
-            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Flight Time</p>
+            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-1">Flight Time</p>
             <p className="text-lg font-mono font-bold text-green-primary">
               {flight.flight_time_hrs ? decimalToHHMM(flight.flight_time_hrs) : '—'}
             </p>
           </div>
           <div>
-            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Night</p>
+            <p className="text-xs text-foreground/40 uppercase tracking-wider mb-1">Night</p>
             <p className="text-lg font-mono font-bold text-foreground/60">
               {f.night_time_hrs ? decimalToHHMM(f.night_time_hrs) : '—'}
             </p>
@@ -183,62 +259,48 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
         </div>
       </Card>
 
-      {/* FR24 Flight Data */}
-      {hasFr24Data && (
+      {/* Flight Data (cruise) */}
+      {(cruiseAltFt || cruiseGspeedKts || descentStartUtc) && (
         <Card>
           <CardHeader><CardTitle>Flight Data</CardTitle></CardHeader>
-          <div className="space-y-4 text-sm">
-            {/* Cruise */}
-            {(f.cruise_alt_ft || f.cruise_gspeed_kts || f.descent_start_utc) && (
-              <div className="flex flex-wrap gap-x-6 gap-y-2">
-                {f.cruise_alt_ft && (
-                  <div>
-                    <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Cruise Alt</p>
-                    <p className="font-mono font-semibold text-foreground">
-                      FL{Math.round(f.cruise_alt_ft / 100)}
-                      <span className="text-foreground/40 text-xs ml-1">({f.cruise_alt_ft.toLocaleString()}ft)</span>
-                    </p>
-                  </div>
-                )}
-                {f.cruise_gspeed_kts && (
-                  <div>
-                    <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Ground Speed</p>
-                    <p className="font-mono font-semibold text-foreground">{f.cruise_gspeed_kts} kt</p>
-                  </div>
-                )}
-                {f.descent_start_utc && (
-                  <div>
-                    <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Top of Descent</p>
-                    <p className="font-mono font-semibold text-foreground">
-                      {new Date(f.descent_start_utc).toISOString().slice(11, 16)}Z
-                    </p>
-                  </div>
-                )}
+          <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
+            {cruiseAltFt && (
+              <div>
+                <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Cruise Alt</p>
+                <p className="font-mono font-semibold text-foreground">
+                  FL{Math.round(cruiseAltFt / 100)}
+                  <span className="text-foreground/40 text-xs ml-1">({cruiseAltFt.toLocaleString()}ft)</span>
+                </p>
               </div>
             )}
-
-            {/* Airspace transitions */}
-            {f.airspace_transitions && f.airspace_transitions.length > 0 && (
+            {cruiseGspeedKts && (
               <div>
-                <p className="text-xs text-foreground/40 uppercase tracking-wider mb-2">Airspace</p>
-                <div className="flex flex-wrap gap-2">
-                  {(f.airspace_transitions as any[]).map((t: any, i: number) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-surface-raised rounded-md px-2.5 py-1.5 border border-border/50">
-                      {t.exited && (
-                        <span className="text-xs font-mono text-foreground/40">{t.exited}</span>
-                      )}
-                      {t.exited && t.entered && (
-                        <span className="text-green-primary/50 text-xs">→</span>
-                      )}
-                      {t.entered && (
-                        <span className="text-xs font-mono text-foreground">{t.entered}</span>
-                      )}
-                      <span className="text-xs text-foreground/30 ml-1">
-                        {new Date(t.timestamp).toISOString().slice(11, 16)}Z
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Cruise Speed</p>
+                <p className="font-mono font-semibold text-foreground">{cruiseGspeedKts} kt</p>
+              </div>
+            )}
+            {descentStartUtc && (
+              <div>
+                <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Top of Descent</p>
+                <p className="font-mono font-semibold text-foreground">
+                  {new Date(descentStartUtc).toISOString().slice(11, 16)}Z
+                  {destTz && (() => {
+                    const loc = localTime(descentStartUtc, destTz)
+                    return loc ? <span className="text-foreground/40 text-xs ml-1">({loc.time} {loc.abbr})</span> : null
+                  })()}
+                </p>
+              </div>
+            )}
+            {stats?.climbRateFpm && (
+              <div>
+                <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Avg Climb Rate</p>
+                <p className="font-mono font-semibold text-foreground">+{stats.climbRateFpm} fpm</p>
+              </div>
+            )}
+            {stats?.descentRateFpm && (
+              <div>
+                <p className="text-xs text-foreground/40 uppercase tracking-wider mb-0.5">Avg Descent Rate</p>
+                <p className="font-mono font-semibold text-foreground">−{stats.descentRateFpm} fpm</p>
               </div>
             )}
           </div>

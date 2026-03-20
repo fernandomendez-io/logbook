@@ -47,7 +47,6 @@ export async function PATCH(
   const { data, error } = await supabase
     .from('flights')
     .update({
-      // Cast to any: generated types lag behind the 0004_fr24_fields migration
       ...({} as any),
       copilot_id:          copilotId,
       flight_number:       body.flightNumber,
@@ -75,8 +74,6 @@ export async function PATCH(
       cruise_gspeed_kts:    body.cruiseGspeedKts     ?? null,
       cruise_alt_ft:        body.cruiseAltFt          ?? null,
       descent_start_utc:    body.descentStartUtc     ?? null,
-      airspace_transitions: body.airspaceTransitions ?? null,
-      fr24_flight_id:       body.fr24FlightId        ?? null,
       metar_raw:           body.metarRaw || null,
       ceiling_ft:          body.ceilingFt ?? null,
       visibility_sm:       body.visibilitySm ?? null,

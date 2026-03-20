@@ -1,18 +1,12 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import type { TrackPoint } from '@/lib/api/flightaware'
 
 const FlightMapInner = dynamic(() => import('./flight-map-inner'), { ssr: false })
 
-interface RawEvent {
-  lat?: number | null
-  lon?: number | null
-  timestamp?: string
-  type?: string
-}
-
 interface FlightMapProps {
-  rawEvents: RawEvent[]
+  trackPoints: TrackPoint[]
   originIcao: string
   destIcao: string
 }

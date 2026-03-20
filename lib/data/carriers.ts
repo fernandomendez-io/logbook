@@ -298,9 +298,9 @@ export function prefixFlight(
   return `${prefix}${flightNumber}`;
 }
 
-/** Prefix a flight number for FR24 searches using the mainline IATA code
- *  (e.g. "3434" → "AA3434" for an Envoy flight). FR24 indexes regional flights
- *  under the mainline ticket number (AA), not the operating carrier code (MQ). */
+/** Prefix a flight number for FlightAware searches using the mainline IATA code
+ *  (e.g. "3434" → "AA3434" for an Envoy flight). FlightAware indexes regional
+ *  flights under the mainline ticket number (AA), not the operating carrier code (MQ). */
 export function prefixFlightForSearch(
   flightNumber: string,
   operatingCarrier?: string | null,

@@ -88,17 +88,3 @@ export function calculateNightTimeHrs(points: FlightPoint[]): number {
   return Math.round((nightMs / 3_600_000) * 100) / 100
 }
 
-/**
- * Extract lat/lon+timestamp points from the raw FR24 response stored in fr24_raw.
- * Shape: { events: { data: [{ events: FR24Event[] }] } }
- */
-export function extractFlightPoints(fr24Raw: unknown): FlightPoint[] {
-  const raw = fr24Raw as Record<string, any> | null
-  if (!raw) return []
-
-  const events: any[] = raw?.events?.data?.[0]?.events ?? []
-  return events
-    .filter(e => e.lat != null && e.lon != null && e.timestamp)
-    .map(e => ({ lat: e.lat as number, lon: e.lon as number, timestamp: e.timestamp as string }))
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-}

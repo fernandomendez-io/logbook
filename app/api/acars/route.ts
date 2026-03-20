@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { fetchACARSTimes } from "@/lib/api/fr24";
+import { fetchFlightAwareFlight, deriveFlightStats } from "@/lib/api/flightaware";
 import { fetchAAGateTimes, stripCarrierPrefix } from "@/lib/api/aa";
 import { prefixFlight, prefixFlightForSearch } from "@/lib/data/carriers";
 
@@ -31,10 +31,7 @@ export async function GET(request: NextRequest) {
     .single();
 
   const resolvedFlight = prefixFlight(flightNumber, profile?.operating_carrier);
-  const searchFlight = prefixFlightForSearch(
-    flightNumber,
-    profile?.operating_carrier,
-  );
+  const searchFlight = prefixFlightForSearch(flightNumber, profile?.operating_carrier);
 
   const { data: cachedRaw } = await supabase
     .from("acars_cache")
@@ -44,13 +41,10 @@ export async function GET(request: NextRequest) {
     .eq("origin_icao", origin)
     .single();
 
-  // Cast to any: generated types lag behind the 0004_fr24_fields migration
   const cached = cachedRaw as any;
-
   const numericFlight = stripCarrierPrefix(flightNumber);
 
   if (cached) {
-    // AA gate times always override cached FR24 gate times
     const aa = await fetchAAGateTimes(numericFlight, date);
     return NextResponse.json({
       outUtc: aa?.outUtc ?? cached.out_utc,
@@ -68,30 +62,25 @@ export async function GET(request: NextRequest) {
       cruiseGspeedKts: cached.cruise_gspeed_kts,
       cruiseAltFt: cached.cruise_alt_ft,
       descentStartUtc: cached.descent_start_utc,
-      airspaceTransitions: cached.airspace_transitions,
-      fr24FlightId: cached.fr24_flight_id,
+      faFlightId: cached.fa_flight_id,
       gateTimesUnavailable:
-        !cached.out_utc &&
-        !cached.in_utc &&
+        !cached.out_utc && !cached.in_utc &&
         (!!cached.off_utc || !!cached.on_utc),
       source: "cache",
       resolvedFlight,
     });
   }
 
-  // Fetch FR24 and AA in parallel — AA gate times take priority for OUT/IN
+  // Fetch FlightAware and AA in parallel
   const [result, aa] = await Promise.all([
-    fetchACARSTimes(searchFlight, date, origin || undefined),
+    fetchFlightAwareFlight(searchFlight, date, origin || undefined),
     fetchAAGateTimes(numericFlight, date),
   ]);
-  const { times, raw, fr24FlightId, selectedIndex, totalLegs, status } = result;
+  const { times, raw, faFlightId, selectedIndex, totalLegs, status, track } = result;
 
   if (!times && !aa) {
     return NextResponse.json(
-      {
-        error: "Flight not found or no tracking data available",
-        debug: { raw, totalLegs, origin, resolvedFlight, status },
-      },
+      { error: "Flight not found or no tracking data available", debug: { raw, totalLegs, origin, resolvedFlight, status } },
       { status: 404 },
     );
   }
@@ -102,36 +91,45 @@ export async function GET(request: NextRequest) {
     inUtc:  aa?.inUtc  ?? times?.inUtc  ?? null,
   };
 
+  // Derive stats from track for caching
+  const stats = track.length >= 5 ? deriveFlightStats(track) : null
+  const cruiseAltFt     = mergedTimes.cruiseAltFt     ?? stats?.cruiseAltFt     ?? null
+  const cruiseGspeedKts = mergedTimes.cruiseGspeedKts ?? stats?.cruiseGspeedKts ?? null
+  const descentStartUtc = mergedTimes.descentStartUtc ?? stats?.descentStartUtc ?? null
+
   await supabase.from("acars_cache").upsert(
     {
-      flight_number: resolvedFlight,
-      flight_date: date,
-      origin_icao: origin || mergedTimes.origin || "",
-      out_utc: mergedTimes.outUtc,
-      off_utc: mergedTimes.offUtc,
-      on_utc: mergedTimes.onUtc,
-      in_utc: mergedTimes.inUtc,
-      tail_number: mergedTimes.tailNumber,
-      aircraft_type: mergedTimes.aircraftType,
-      origin_iata: mergedTimes.origin,
-      dest_iata: mergedTimes.destination,
-      departure_gate: mergedTimes.departureGate ?? null,
-      arrival_gate: mergedTimes.arrivalGate ?? null,
-      departure_runway: mergedTimes.departureRunway ?? null,
-      landing_runway: mergedTimes.landingRunway ?? null,
-      cruise_gspeed_kts: mergedTimes.cruiseGspeedKts ?? null,
-      cruise_alt_ft: mergedTimes.cruiseAltFt ?? null,
-      descent_start_utc: mergedTimes.descentStartUtc ?? null,
-      airspace_transitions: mergedTimes.airspaceTransitions ?? [],
-      fr24_flight_id: fr24FlightId,
-      raw_response: raw as any,
+      flight_number:     resolvedFlight,
+      flight_date:       date,
+      origin_icao:       origin || mergedTimes.origin || "",
+      out_utc:           mergedTimes.outUtc,
+      off_utc:           mergedTimes.offUtc,
+      on_utc:            mergedTimes.onUtc,
+      in_utc:            mergedTimes.inUtc,
+      tail_number:       mergedTimes.tailNumber,
+      aircraft_type:     mergedTimes.aircraftType,
+      origin_iata:       mergedTimes.origin,
+      dest_iata:         mergedTimes.destination,
+      departure_gate:    mergedTimes.departureGate    ?? null,
+      arrival_gate:      mergedTimes.arrivalGate      ?? null,
+      departure_runway:  mergedTimes.departureRunway  ?? null,
+      landing_runway:    mergedTimes.landingRunway    ?? null,
+      cruise_gspeed_kts: cruiseGspeedKts,
+      cruise_alt_ft:     cruiseAltFt,
+      descent_start_utc: descentStartUtc,
+      fa_flight_id:      faFlightId,
+      fa_track:          track.length > 0 ? track : null,
+      raw_response:      raw as any,
     },
     { onConflict: "flight_number,flight_date,origin_icao" },
   );
 
   return NextResponse.json({
     ...mergedTimes,
-    fr24FlightId,
+    cruiseAltFt,
+    cruiseGspeedKts,
+    descentStartUtc,
+    faFlightId,
     source: "live",
     debug: { selectedIndex, totalLegs },
   });

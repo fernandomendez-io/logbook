@@ -14,7 +14,14 @@
       "Bash(ls -1 /c/Users/ferna/dev/logbook/components/*/)",
       "Bash(xargs ls:*)",
       "Bash(grep -r \"aerodatabox\\\\|flightaware\" /c/Users/ferna/dev/logbook/app --include=*.ts --include=*.tsx)",
-      "Bash(find c:/Users/ferna/dev/logbook -type f -name *airport* -o -name *icao* -o -name *timezone*)"
+      "Bash(find c:/Users/ferna/dev/logbook -type f -name *airport* -o -name *icao* -o -name *timezone*)",
+      "WebFetch(domain:www.flightaware.com)",
+      "Bash(find /Users/fernandomendez/Development/logbook -type f -name *.env*)",
+      "Bash(grep -r from.*[''].*fr24[''] /Users/fernandomendez/Development/logbook --include=*.ts --include=*.tsx --include=*.js --include=*.jsx)",
+      "Bash(grep -r import.*fr24 /Users/fernandomendez/Development/logbook --include=*.ts --include=*.tsx --include=*.js --include=*.jsx)",
+      "Bash(grep -r \"FR24_API_KEY\\\\|FLIGHTAWARE_API_KEY\\\\|METAR_API_KEY\" /Users/fernandomendez/Development/logbook --include=*.json --include=*.ts --include=*.tsx --include=*.md)",
+      "Bash(grep -r import.*from.*lib/api /Users/fernandomendez/Development/logbook --include=*.ts --include=*.tsx)",
+      "Bash(grep -r fetchACARSTimes /Users/fernandomendez/Development/logbook --include=*.ts --include=*.tsx)"
     ]
   }
 }

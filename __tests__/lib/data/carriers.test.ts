@@ -85,7 +85,7 @@ describe('prefixFlight', () => {
 })
 
 describe('prefixFlightForSearch', () => {
-  it('returns AA-prefixed number for MQ_AA (FR24 search)', () => {
+  it('returns AA-prefixed number for MQ_AA (FlightAware search)', () => {
     expect(prefixFlightForSearch('3779', 'MQ_AA')).toBe('AA3779')
   })
 

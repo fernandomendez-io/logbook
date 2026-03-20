@@ -30,7 +30,6 @@ function makeFlight(overrides: Partial<Flight> = {}): Flight {
     is_deadhead: false,
     is_cancelled: false,
     notes: null,
-    fr24_raw: null,
     created_at: '2024-01-15T00:00:00Z',
     updated_at: '2024-01-15T00:00:00Z',
     ...overrides,

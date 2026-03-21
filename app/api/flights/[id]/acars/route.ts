@@ -121,6 +121,26 @@ export async function POST(
       t.descentStartUtc = t.descentStartUtc ?? stats.descentStartUtc
     }
 
+    // Side effect: cache airport data for origin/dest using the timezone FA returned
+    // Use ignoreDuplicates so we never downgrade a full airport record with partial data
+    const originIcaoFa = t.originIcao as string | null
+    const destIcaoFa   = t.destIcao   as string | null
+    const originTzFa   = t.originTimezone as string | null
+    const destTzFa     = t.destTimezone   as string | null
+    const airportDb = supabase as any
+    if (originIcaoFa && originTzFa) {
+      await airportDb.from('airports').upsert(
+        { airport_code: originIcaoFa, code_icao: originIcaoFa, timezone: originTzFa, fetched_at: new Date().toISOString() },
+        { onConflict: 'airport_code', ignoreDuplicates: true },
+      )
+    }
+    if (destIcaoFa && destTzFa) {
+      await airportDb.from('airports').upsert(
+        { airport_code: destIcaoFa, code_icao: destIcaoFa, timezone: destTzFa, fetched_at: new Date().toISOString() },
+        { onConflict: 'airport_code', ignoreDuplicates: true },
+      )
+    }
+
     await supabase.from('acars_cache').upsert({
       flight_number:        flight.flight_number,
       flight_date:          date,

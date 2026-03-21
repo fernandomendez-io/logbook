@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { parseSequence } from '@/lib/parsers/sequence-parser'
+import { getAirportTimezone } from '@/lib/data/airport-cache'
 
 /**
  * Format a local HHMM time as a nominal ISO timestamp for storage.
@@ -66,6 +67,13 @@ export async function POST(request: NextRequest) {
   // Insert flights
   const flights = confirmedFlights || parsed.allFlights
   if (flights.length > 0) {
+    // Resolve airport timezones for all unique ICAOs (cache-first, FA API fallback)
+    const uniqueIcaos = [...new Set<string>(flights.flatMap((f: any) => [f.originIcao, f.destinationIcao]))]
+    const tzEntries = await Promise.all(
+      uniqueIcaos.map(async (icao: string) => [icao, await getAirportTimezone(icao, supabase)] as const)
+    )
+    const tzMap = Object.fromEntries(tzEntries)
+
     const flightRows = flights.map((f: any) => ({
       sequence_id:         seq.id,
       pilot_id:            user.id,
@@ -80,6 +88,8 @@ export async function POST(request: NextRequest) {
       is_deadhead:         f.isDeadhead,
       is_cancelled:        f.isCancelled,
       cross_country:       true,
+      origin_timezone:     tzMap[f.originIcao]      ?? null,
+      dest_timezone:       tzMap[f.destinationIcao] ?? null,
     }))
 
     const { error: flightErr } = await supabase.from('flights').insert(flightRows)

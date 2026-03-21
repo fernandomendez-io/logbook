@@ -111,11 +111,29 @@ export default function FlightForm({
     initialValues.destinationIcao ?? "",
   );
 
-  // Use browser's local timezone for time input labels
-  const originTz     = useMemo(() => getLocalTimezone(), [originIcao]);
-  const destTz       = useMemo(() => getLocalTimezone(), [destinationIcao]);
+  // Timezone for time input labels — resolved from airport cache, falls back to browser local
+  const [originTz, setOriginTz] = useState<string>(getLocalTimezone());
+  const [destTz, setDestTz]     = useState<string>(getLocalTimezone());
   const originTzAbbr = useMemo(() => getTimezoneAbbr(originTz), [originTz]);
   const destTzAbbr   = useMemo(() => getTimezoneAbbr(destTz), [destTz]);
+
+  useEffect(() => {
+    if (originIcao.length >= 3) {
+      fetch(`/api/airports/${originIcao}`)
+        .then(r => r.json())
+        .then(d => { if (d.timezone) setOriginTz(d.timezone) })
+        .catch(() => {})
+    }
+  }, [originIcao]);
+
+  useEffect(() => {
+    if (destinationIcao.length >= 3) {
+      fetch(`/api/airports/${destinationIcao}`)
+        .then(r => r.json())
+        .then(d => { if (d.timezone) setDestTz(d.timezone) })
+        .catch(() => {})
+    }
+  }, [destinationIcao]);
   const [scheduledOutUtc, setScheduledOutUtc] = useState(
     initialValues.scheduledOutUtc ?? "",
   );

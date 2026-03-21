@@ -333,6 +333,36 @@ function greatCircleNm(lat1: number, lon1: number, lat2: number, lon2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+// ─── Airport lookup ───────────────────────────────────────────────────────────
+
+export interface FAAirport {
+  airport_code: string
+  code_icao: string
+  code_iata: string | null
+  code_lid: string | null
+  name: string
+  type: string
+  elevation: number | null
+  city: string | null
+  state: string | null
+  country_code: string | null
+  longitude: number
+  latitude: number
+  timezone: string
+  wiki_url: string | null
+}
+
+export async function fetchAirportInfo(icao: string): Promise<FAAirport | null> {
+  try {
+    const result = await faFetch(`/airports/${encodeURIComponent(icao)}`)
+    if (!result || typeof result !== 'object') return null
+    return result as FAAirport
+  } catch (err) {
+    console.error(`[FA] airport fetch error for ${icao}:`, err)
+    return null
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function fetchFlightAwareTrack(faFlightId: string): Promise<TrackPoint[]> {

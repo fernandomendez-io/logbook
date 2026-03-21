@@ -7,17 +7,10 @@ import { decimalToHHMM, formatDate } from '@/lib/utils/format'
 import { TimeDisplay } from '@/components/ui/time-display'
 import { FlightMap } from '@/components/flights/flight-map'
 import { FlightProfile } from '@/components/flights/flight-profile'
-import { getAirportTimezone } from '@/lib/data/airport-timezones'
 import { utcDtToLocal, getTimezoneAbbr } from '@/lib/utils/timezone'
 import { deriveFlightStats, type TrackPoint } from '@/lib/api/flightaware'
 import { FetchTimesButton } from '@/components/flights/fetch-times-button'
 import { AIRPORT_COORDS } from '@/lib/data/airport-coords'
-
-/** Convert IATA-or-ICAO code to 4-letter ICAO for timezone lookup */
-function toIcao(code: string | null): string {
-  if (!code) return ''
-  return code.length === 3 ? `K${code}` : code
-}
 
 /** Format a UTC ISO timestamp as HH:MM in a given IANA timezone.
  *  Returns { time: "HH:MM", abbr: "CDT" } or null. */
@@ -79,9 +72,9 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
   const cruiseGspeedKts = f.cruise_gspeed_kts ?? stats?.cruiseGspeedKts ?? null
   const descentStartUtc = f.descent_start_utc ?? stats?.descentStartUtc ?? null
 
-  // ── Timezones — prefer FA-stored timezone, fall back to static lookup ────
-  const originTz = f.origin_timezone ?? getAirportTimezone(toIcao(flight.origin_icao))
-  const destTz   = f.dest_timezone   ?? getAirportTimezone(toIcao(flight.destination_icao))
+  // ── Timezones — only from FA-fetched data ────────────────────────────────
+  const originTz = (f.origin_timezone as string | null) ?? null
+  const destTz   = (f.dest_timezone   as string | null) ?? null
 
   const outLocal  = localTime(flight.actual_out_utc,  originTz)
   const offLocal  = localTime(flight.actual_off_utc,  originTz)
@@ -99,11 +92,19 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
   ) => (
     <div key={label}>
       <p className="text-xs text-foreground/40 uppercase tracking-wider mb-1">{label}</p>
-      <TimeDisplay iso={utcIso} isActual={isActual} />
-      {local && (
-        <p className="text-xs font-mono text-foreground/50 mt-0.5">
-          {local.time} <span className="text-foreground/30">{local.abbr}</span>
-        </p>
+      {local ? (
+        <>
+          <p className={`text-lg font-mono font-bold ${isActual ? 'text-green-primary' : 'text-foreground/50'}`}>
+            {local.time} <span className="text-sm font-normal text-foreground/40">{local.abbr}</span>
+          </p>
+          {utcIso && (
+            <p className="text-xs font-mono text-foreground/30 mt-0.5">
+              {new Date(utcIso).toISOString().slice(11, 16)}Z
+            </p>
+          )}
+        </>
+      ) : (
+        <TimeDisplay iso={utcIso} isActual={isActual} />
       )}
     </div>
   )
@@ -292,7 +293,7 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
       <Card>
         <CardHeader>
           <CardTitle>Times</CardTitle>
-          <span className="text-xs text-foreground/30 font-mono ml-auto">Zulu / Local</span>
+          <span className="text-xs text-foreground/30 font-mono ml-auto">Local / Zulu</span>
         </CardHeader>
         <div className="grid grid-cols-4 gap-6 mb-4">
           {timeBlock('Sched OUT', flight.scheduled_out_utc, sOutLocal)}

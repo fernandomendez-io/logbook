@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { DateTimeUtcInput } from "@/components/ui/datetime-utc-input";
 import { ActualTimeInput } from "@/components/ui/actual-time-input";
 import { getLocalTimezone, getTimezoneAbbr } from "@/lib/utils/timezone";
-import { getAirportTimezone } from "@/lib/data/airport-timezones";
 import { blockHours, flightHours, decimalToHHMM } from "@/lib/utils/format";
 
 interface ApproachSuggestion {
@@ -112,9 +111,9 @@ export default function FlightForm({
     initialValues.destinationIcao ?? "",
   );
 
-  // Per-airport timezones: OUT/OFF use origin, ON/IN use destination
-  const originTz     = useMemo(() => getAirportTimezone(originIcao) ?? getLocalTimezone(), [originIcao]);
-  const destTz       = useMemo(() => getAirportTimezone(destinationIcao) ?? getLocalTimezone(), [destinationIcao]);
+  // Use browser's local timezone for time input labels
+  const originTz     = useMemo(() => getLocalTimezone(), [originIcao]);
+  const destTz       = useMemo(() => getLocalTimezone(), [destinationIcao]);
   const originTzAbbr = useMemo(() => getTimezoneAbbr(originTz), [originTz]);
   const destTzAbbr   = useMemo(() => getTimezoneAbbr(destTz), [destTz]);
   const [scheduledOutUtc, setScheduledOutUtc] = useState(

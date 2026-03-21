@@ -12,20 +12,11 @@ export function TimeDisplay({ iso, isActual = false }: TimeDisplayProps) {
     )
   }
 
-  const date = new Date(iso)
-  const utcTime = date.toISOString().slice(11, 16) + 'Z'
-  const localTime = date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  })
+  const utcTime = new Date(iso).toISOString().slice(11, 16) + 'Z'
 
   return (
-    <div>
-      <p className={`text-lg font-mono font-bold ${isActual ? 'text-green-primary' : 'text-foreground/50'}`}>
-        {utcTime}
-      </p>
-      <p className="text-xs text-foreground/30 font-mono mt-0.5">{localTime}</p>
-    </div>
+    <p className={`text-lg font-mono font-bold ${isActual ? 'text-green-primary' : 'text-foreground/50'}`}>
+      {utcTime}
+    </p>
   )
 }

@@ -6,6 +6,18 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Pagination } from "@/components/ui/pagination";
 import { decimalToHHMM, formatDate } from "@/lib/utils/format";
+import { utcDtToLocal, getTimezoneAbbr } from "@/lib/utils/timezone";
+
+function fmtLocalCell(utcIso: string | null | undefined, tz: string | null | undefined) {
+  if (!utcIso || !tz) return null
+  const local = utcDtToLocal(utcIso.slice(0, 16), tz)
+  if (!local) return null
+  return {
+    time: local.slice(11, 16),
+    abbr: getTimezoneAbbr(tz),
+    utcZ: new Date(utcIso).toISOString().slice(11, 16) + 'Z',
+  }
+}
 import { FetchTimesButton } from "@/components/flights/fetch-times-button";
 import { DeleteFlightButton } from "@/components/flights/delete-flight-button";
 
@@ -171,14 +183,16 @@ export default async function FlightsPage({
                       {f.origin_icao}–{f.destination_icao}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground/50">
-                      {new Date(f.scheduled_out_utc)
-                        .toISOString()
-                        .slice(11, 16)}
-                      Z
+                      {(() => {
+                        const lcl = fmtLocalCell(f.scheduled_out_utc, (f as any).origin_timezone)
+                        return lcl ? <>{lcl.time} <span className="text-foreground/30">{lcl.abbr}</span><br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span></> : <>{new Date(f.scheduled_out_utc).toISOString().slice(11, 16)}Z</>
+                      })()}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground/50">
-                      {new Date(f.scheduled_in_utc).toISOString().slice(11, 16)}
-                      Z
+                      {(() => {
+                        const lcl = fmtLocalCell(f.scheduled_in_utc, (f as any).dest_timezone)
+                        return lcl ? <>{lcl.time} <span className="text-foreground/30">{lcl.abbr}</span><br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span></> : <>{new Date(f.scheduled_in_utc).toISOString().slice(11, 16)}Z</>
+                      })()}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground/60">
                       {f.block_scheduled_hrs
@@ -294,26 +308,38 @@ export default async function FlightsPage({
                     {f.origin_icao}–{f.destination_icao}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs">
-                    {f.actual_out_utc ? (
-                      new Date(f.actual_out_utc).toISOString().slice(11, 16)
-                    ) : (
-                      <span className="text-foreground/30">
-                        {new Date(f.scheduled_out_utc)
-                          .toISOString()
-                          .slice(11, 16)}
-                      </span>
-                    )}
+                    {(() => {
+                      const iso = f.actual_out_utc ?? f.scheduled_out_utc
+                      const lcl = fmtLocalCell(iso, (f as any).origin_timezone)
+                      const dim = !f.actual_out_utc
+                      return lcl ? (
+                        <span className={dim ? 'text-foreground/30' : ''}>
+                          {lcl.time} <span className="text-foreground/40">{lcl.abbr}</span>
+                          <br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span>
+                        </span>
+                      ) : (
+                        <span className={dim ? 'text-foreground/30' : ''}>
+                          {new Date(iso).toISOString().slice(11, 16)}Z
+                        </span>
+                      )
+                    })()}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs">
-                    {f.actual_in_utc ? (
-                      new Date(f.actual_in_utc).toISOString().slice(11, 16)
-                    ) : (
-                      <span className="text-foreground/30">
-                        {new Date(f.scheduled_in_utc)
-                          .toISOString()
-                          .slice(11, 16)}
-                      </span>
-                    )}
+                    {(() => {
+                      const iso = f.actual_in_utc ?? f.scheduled_in_utc
+                      const lcl = fmtLocalCell(iso, (f as any).dest_timezone)
+                      const dim = !f.actual_in_utc
+                      return lcl ? (
+                        <span className={dim ? 'text-foreground/30' : ''}>
+                          {lcl.time} <span className="text-foreground/40">{lcl.abbr}</span>
+                          <br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span>
+                        </span>
+                      ) : (
+                        <span className={dim ? 'text-foreground/30' : ''}>
+                          {new Date(iso).toISOString().slice(11, 16)}Z
+                        </span>
+                      )
+                    })()}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-xs">
                     {f.block_actual_hrs ? (

@@ -7,21 +7,11 @@ import { formatDate, decimalToHHMM } from '@/lib/utils/format'
 import { FetchTimesButton } from '@/components/flights/fetch-times-button'
 import { DeleteFlightButton } from '@/components/flights/delete-flight-button'
 import { DeleteSequenceButton } from '@/components/sequences/delete-sequence-button'
-import { getAirportTimezone } from '@/lib/data/airport-timezones'
 import { utcDtToLocal, getTimezoneAbbr } from '@/lib/utils/timezone'
 
-/** Convert IATA or ICAO code to 4-letter ICAO for timezone lookup */
-function toIcao(code: string | null | undefined): string {
-  if (!code) return ''
-  return code.length === 3 ? `K${code}` : code
-}
-
-/** Return "HH:MM tz" local time for a UTC ISO string, or null.
- *  Pass tzOverride (IANA string) from FA data when available; falls back to static lookup. */
-function fmtLocal(utcIso: string | null | undefined, iataOrIcao: string | null | undefined, tzOverride?: string | null): string | null {
-  if (!utcIso || !iataOrIcao) return null
-  const tz = tzOverride ?? getAirportTimezone(toIcao(iataOrIcao))
-  if (!tz) return null
+/** Return "HH:MM tz" local time for a UTC ISO string using the FA-stored timezone, or null. */
+function fmtLocal(utcIso: string | null | undefined, tz: string | null | undefined): string | null {
+  if (!utcIso || !tz) return null
   const local = utcDtToLocal(utcIso.slice(0, 16), tz)
   if (!local) return null
   return `${local.slice(11, 16)} ${getTimezoneAbbr(tz)}`
@@ -120,12 +110,10 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
                 const f = flight as any
                 const outLocal = fmtLocal(
                   flight.actual_out_utc ?? flight.scheduled_out_utc,
-                  flight.origin_icao,
                   f.origin_timezone,
                 )
                 const inLocal = fmtLocal(
                   flight.actual_in_utc ?? flight.scheduled_in_utc,
-                  flight.destination_icao,
                   f.dest_timezone,
                 )
                 const hasActual = !!flight.actual_out_utc

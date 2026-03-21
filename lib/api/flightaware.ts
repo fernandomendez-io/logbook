@@ -31,8 +31,10 @@ export interface ACARSTimes {
   inUtc: string | null
   tailNumber: string | null
   aircraftType: string | null
-  origin: string | null
-  destination: string | null
+  origin: string | null           // IATA code
+  destination: string | null      // IATA code
+  originIcao?: string | null      // ICAO code
+  destIcao?: string | null        // ICAO code
   departureGate?: string | null
   arrivalGate?: string | null
   departureRunway?: string | null
@@ -40,8 +42,19 @@ export interface ACARSTimes {
   cruiseGspeedKts?: number | null
   cruiseAltFt?: number | null
   descentStartUtc?: string | null
-  // airspaceTransitions removed — not available in AeroAPI
   gateTimesUnavailable?: boolean
+  // Extended FA fields
+  originTimezone?: string | null      // IANA e.g. "America/Chicago"
+  destTimezone?: string | null        // IANA e.g. "America/New_York"
+  route?: string | null               // ATC filed route string
+  routeDistanceNm?: number | null     // filed distance in nm
+  filedAirspeedKts?: number | null    // filed airspeed
+  filedAltitudeFt?: number | null     // filed altitude in feet (converted from FL)
+  terminalOrigin?: string | null
+  terminalDestination?: string | null
+  baggageClaim?: string | null
+  departureDelaySec?: number | null   // negative = early
+  arrivalDelaySec?: number | null
 }
 
 export interface ACARSResult {
@@ -61,8 +74,11 @@ interface FAFlightOriginDest {
   code?: string
   code_icao?: string
   code_iata?: string
+  code_lid?: string
   city?: string
   name?: string
+  timezone?: string          // IANA timezone e.g. "America/Chicago"
+  airport_info_url?: string
 }
 
 interface FAFlight {
@@ -90,8 +106,17 @@ interface FAFlight {
   actual_in?: string | null
   gate_origin?: string | null
   gate_destination?: string | null
-  runway_off?: string | null
-  runway_on?: string | null
+  actual_runway_off?: string | null
+  actual_runway_on?: string | null
+  route?: string | null
+  route_distance?: number | null      // nautical miles
+  filed_airspeed?: number | null      // knots
+  filed_altitude?: number | null      // hundreds of feet (FL340 = 340)
+  terminal_origin?: string | null
+  terminal_destination?: string | null
+  baggage_claim?: string | null
+  departure_delay?: number | null     // seconds (negative = early)
+  arrival_delay?: number | null       // seconds
   diverted?: boolean
   cancelled?: boolean
 }
@@ -371,6 +396,8 @@ export async function fetchFlightAwareFlight(
     const acType = mapAircraftType(leg.aircraft_type)
     const originIataCode = iataFromFAOrigin(leg.origin)
     const destIataCode = iataFromFAOrigin(leg.destination)
+    const originIcaoCode = icaoFromFAOrigin(leg.origin)
+    const destIcaoCode = icaoFromFAOrigin(leg.destination)
 
     const outUtc = leg.actual_out ?? null
     const offUtc = leg.actual_off ?? null
@@ -392,14 +419,27 @@ export async function fetchFlightAwareFlight(
       aircraftType: acType,
       origin: originIataCode,
       destination: destIataCode,
+      originIcao: originIcaoCode,
+      destIcao: destIcaoCode,
       departureGate: leg.gate_origin ?? null,
       arrivalGate: leg.gate_destination ?? null,
-      departureRunway: leg.runway_off ?? null,
-      landingRunway: leg.runway_on ?? null,
+      departureRunway: leg.actual_runway_off ?? null,
+      landingRunway: leg.actual_runway_on ?? null,
       cruiseGspeedKts: stats?.cruiseGspeedKts ?? null,
       cruiseAltFt: stats?.cruiseAltFt ?? null,
       descentStartUtc: stats?.descentStartUtc ?? null,
       gateTimesUnavailable: hasAirTimes && !hasGateTimes,
+      originTimezone:     leg.origin?.timezone ?? null,
+      destTimezone:       leg.destination?.timezone ?? null,
+      route:              leg.route ?? null,
+      routeDistanceNm:    leg.route_distance ?? null,
+      filedAirspeedKts:   leg.filed_airspeed ?? null,
+      filedAltitudeFt:    leg.filed_altitude != null ? leg.filed_altitude * 100 : null,
+      terminalOrigin:     leg.terminal_origin ?? null,
+      terminalDestination: leg.terminal_destination ?? null,
+      baggageClaim:       leg.baggage_claim ?? null,
+      departureDelaySec:  leg.departure_delay ?? null,
+      arrivalDelaySec:    leg.arrival_delay ?? null,
     }
 
     return {

@@ -79,9 +79,9 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
   const cruiseGspeedKts = f.cruise_gspeed_kts ?? stats?.cruiseGspeedKts ?? null
   const descentStartUtc = f.descent_start_utc ?? stats?.descentStartUtc ?? null
 
-  // ── Timezones ────────────────────────────────────────────────────────────
-  const originTz = getAirportTimezone(toIcao(flight.origin_icao))
-  const destTz   = getAirportTimezone(toIcao(flight.destination_icao))
+  // ── Timezones — prefer FA-stored timezone, fall back to static lookup ────
+  const originTz = f.origin_timezone ?? getAirportTimezone(toIcao(flight.origin_icao))
+  const destTz   = f.dest_timezone   ?? getAirportTimezone(toIcao(flight.destination_icao))
 
   const outLocal  = localTime(flight.actual_out_utc,  originTz)
   const offLocal  = localTime(flight.actual_off_utc,  originTz)
@@ -149,11 +149,19 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
         <div className="flex items-center justify-center gap-8 py-4">
           <div className="text-center">
             <p className="text-4xl font-bold font-mono text-foreground">{flight.origin_icao}</p>
+            {f.terminal_origin && (
+              <p className="text-xs font-mono text-foreground/30 mt-0.5">Term {f.terminal_origin}</p>
+            )}
             {f.departure_gate && (
-              <p className="text-xs font-mono text-foreground/40 mt-1">Gate {f.departure_gate}</p>
+              <p className="text-xs font-mono text-foreground/40 mt-0.5">Gate {f.departure_gate}</p>
             )}
             {f.departure_runway && (
               <p className="text-xs font-mono text-green-primary/60 mt-0.5">Rwy {f.departure_runway}</p>
+            )}
+            {f.departure_delay_sec != null && f.departure_delay_sec !== 0 && (
+              <p className={`text-xs font-mono mt-0.5 ${f.departure_delay_sec > 0 ? 'text-yellow-400' : 'text-green-primary/60'}`}>
+                {f.departure_delay_sec > 0 ? '+' : ''}{Math.round(f.departure_delay_sec / 60)} min
+              </p>
             )}
             {sOutLocal && (
               <p className="text-xs font-mono text-foreground/30 mt-1">{sOutLocal.time} <span className="text-foreground/20">{sOutLocal.abbr}</span></p>
@@ -165,17 +173,33 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             </svg>
             {flight.aircraft_type && <Badge variant="outline">{flight.aircraft_type}</Badge>}
             {flight.tail_number && <span className="text-xs font-mono text-foreground/40">{flight.tail_number}</span>}
-            {stats?.distanceNm ? (
-              <span className="text-xs font-mono text-foreground/30">{stats.distanceNm} nm</span>
-            ) : null}
+            {(stats?.distanceNm || f.route_distance_nm) && (
+              <span className="text-xs font-mono text-foreground/30">
+                {stats?.distanceNm ?? f.route_distance_nm} nm
+                {stats?.distanceNm && f.route_distance_nm && stats.distanceNm !== f.route_distance_nm && (
+                  <span className="text-foreground/20"> (fld {f.route_distance_nm})</span>
+                )}
+              </span>
+            )}
           </div>
           <div className="text-center">
             <p className="text-4xl font-bold font-mono text-foreground">{flight.destination_icao}</p>
+            {f.terminal_destination && (
+              <p className="text-xs font-mono text-foreground/30 mt-0.5">Term {f.terminal_destination}</p>
+            )}
             {f.arrival_gate && (
-              <p className="text-xs font-mono text-foreground/40 mt-1">Gate {f.arrival_gate}</p>
+              <p className="text-xs font-mono text-foreground/40 mt-0.5">Gate {f.arrival_gate}</p>
             )}
             {f.approach_runway && (
               <p className="text-xs font-mono text-green-primary/60 mt-0.5">Rwy {f.approach_runway}</p>
+            )}
+            {f.baggage_claim && (
+              <p className="text-xs font-mono text-foreground/30 mt-0.5">Bag {f.baggage_claim}</p>
+            )}
+            {f.arrival_delay_sec != null && f.arrival_delay_sec !== 0 && (
+              <p className={`text-xs font-mono mt-0.5 ${f.arrival_delay_sec > 0 ? 'text-yellow-400' : 'text-green-primary/60'}`}>
+                {f.arrival_delay_sec > 0 ? '+' : ''}{Math.round(f.arrival_delay_sec / 60)} min
+              </p>
             )}
             {flight.diverted_to_icao && (
               <p className="text-sm text-red-400 font-mono">→ {flight.diverted_to_icao}</p>
@@ -207,6 +231,29 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Filed route / flight plan */}
+      {(f.route || f.filed_altitude_ft || f.filed_airspeed_kts) && (
+        <Card>
+          <CardHeader><CardTitle>Filed Route</CardTitle></CardHeader>
+          <div className="space-y-2">
+            {f.route && (
+              <p className="text-xs font-mono text-foreground/60 break-all leading-relaxed">{f.route}</p>
+            )}
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs font-mono text-foreground/50">
+              {f.filed_altitude_ft && (
+                <span>Alt <span className="text-foreground/70">FL{Math.round(f.filed_altitude_ft / 100)}</span></span>
+              )}
+              {f.filed_airspeed_kts && (
+                <span>Spd <span className="text-foreground/70">{f.filed_airspeed_kts} kt</span></span>
+              )}
+              {f.route_distance_nm && (
+                <span>Dist <span className="text-foreground/70">{f.route_distance_nm} nm</span></span>
+              )}
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Map */}

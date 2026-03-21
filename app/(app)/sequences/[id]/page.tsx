@@ -16,10 +16,11 @@ function toIcao(code: string | null | undefined): string {
   return code.length === 3 ? `K${code}` : code
 }
 
-/** Return "HH:MM tz" local time for a UTC ISO string, or null */
-function fmtLocal(utcIso: string | null | undefined, iataOrIcao: string | null | undefined): string | null {
+/** Return "HH:MM tz" local time for a UTC ISO string, or null.
+ *  Pass tzOverride (IANA string) from FA data when available; falls back to static lookup. */
+function fmtLocal(utcIso: string | null | undefined, iataOrIcao: string | null | undefined, tzOverride?: string | null): string | null {
   if (!utcIso || !iataOrIcao) return null
-  const tz = getAirportTimezone(toIcao(iataOrIcao))
+  const tz = tzOverride ?? getAirportTimezone(toIcao(iataOrIcao))
   if (!tz) return null
   const local = utcDtToLocal(utcIso.slice(0, 16), tz)
   if (!local) return null
@@ -116,13 +117,16 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
             </thead>
             <tbody className="divide-y divide-border/30">
               {flights?.map(flight => {
+                const f = flight as any
                 const outLocal = fmtLocal(
                   flight.actual_out_utc ?? flight.scheduled_out_utc,
                   flight.origin_icao,
+                  f.origin_timezone,
                 )
                 const inLocal = fmtLocal(
                   flight.actual_in_utc ?? flight.scheduled_in_utc,
                   flight.destination_icao,
+                  f.dest_timezone,
                 )
                 const hasActual = !!flight.actual_out_utc
 

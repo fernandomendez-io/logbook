@@ -7,6 +7,7 @@ import { formatDate, decimalToHHMM } from "@/lib/utils/format";
 import { FetchTimesButton } from "@/components/flights/fetch-times-button";
 import { DeleteFlightButton } from "@/components/flights/delete-flight-button";
 import { DeleteSequenceButton } from "@/components/sequences/delete-sequence-button";
+import { SyncSequenceButton } from "@/components/calendar/sync-sequence-button";
 import { utcDtToLocal, getTimezoneAbbr } from "@/lib/utils/timezone";
 
 /** Return "HH:MM tz" local time for a UTC ISO string using the FA-stored timezone, or null. */
@@ -47,6 +48,15 @@ export default async function SequenceDetailPage({
     .eq("id", user.id)
     .single();
   const isAdmin = profile?.role === "admin";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db: any = supabase;
+  const { data: gcCreds } = await db
+    .from("google_credentials")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .single();
+  const googleConnected = !!gcCreds;
 
   const { data: flights } = await supabase
     .from("flights")
@@ -97,6 +107,7 @@ export default async function SequenceDetailPage({
         >
           {sequence.status}
         </Badge>
+        {googleConnected && <SyncSequenceButton sequenceId={sequence.id} />}
         <DeleteSequenceButton
           sequenceId={sequence.id}
           flightCount={flightCount}

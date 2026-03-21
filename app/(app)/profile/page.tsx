@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatDate } from '@/lib/utils/format'
 import { CARRIERS } from '@/lib/data/carriers'
 import ProfileEditForm from '@/components/profile/profile-edit-form'
+import { GoogleCalendarCard } from '@/components/calendar/google-calendar-card'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -17,6 +18,15 @@ export default async function ProfilePage() {
     .single()
 
   if (!profile) redirect('/login')
+
+  const db = supabase as any
+  const { data: gcCreds } = await db
+    .from('google_credentials')
+    .select('user_id, calendar_id')
+    .eq('user_id', user.id)
+    .single()
+  const googleConnected = !!gcCreds
+  const calendarId: string | null = gcCreds?.calendar_id ?? null
 
   const { data: stats } = await supabase
     .from('flights')
@@ -75,6 +85,8 @@ export default async function ProfilePage() {
         base:             profile.base ?? '',
         operatingCarrier: profile.operating_carrier ?? '',
       }} />
+
+      <GoogleCalendarCard connected={googleConnected} calendarId={calendarId} />
 
       <Card>
         <CardHeader><CardTitle>Lifetime Totals</CardTitle></CardHeader>

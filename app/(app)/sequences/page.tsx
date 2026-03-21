@@ -22,13 +22,14 @@ export default async function SequencesPage() {
     .order("report_date", { ascending: false })
     .limit(50);
 
-  // Get flight counts separately
+  // Get flights (counts + times)
   const seqIds = sequences?.map((s) => s.id) || [];
   const { data: flightCounts } = seqIds.length
     ? await supabase
         .from("flights")
-        .select("sequence_id, is_cancelled")
+        .select("sequence_id, is_cancelled, scheduled_out_utc, scheduled_in_utc, origin_icao, destination_icao")
         .in("sequence_id", seqIds)
+        .order("scheduled_out_utc", { ascending: true })
     : { data: [] };
 
   // A sequence is "upcoming" if its report date (first duty day) is today or later.
@@ -38,13 +39,20 @@ export default async function SequencesPage() {
   const upcoming = sequences?.filter((s) => s.report_date >= today) ?? [];
   const past = sequences?.filter((s) => s.report_date < today) ?? [];
 
-  // Build a counts map for efficiency
+  // Build counts + time-range maps
   const countsMap: Record<string, { total: number; active: number }> = {};
+  const timeMap: Record<string, { first: string; last: string }> = {};
   for (const f of flightCounts ?? []) {
     const seqId = f.sequence_id ?? "";
     if (!countsMap[seqId]) countsMap[seqId] = { total: 0, active: 0 };
     countsMap[seqId].total++;
-    if (!f.is_cancelled) countsMap[seqId].active++;
+    if (!f.is_cancelled) {
+      countsMap[seqId].active++;
+      const out = (f.scheduled_out_utc as string | null)?.slice(11, 16);
+      const inn = (f.scheduled_in_utc as string | null)?.slice(11, 16);
+      if (out && !timeMap[seqId]) timeMap[seqId] = { first: out, last: inn ?? "—" };
+      else if (timeMap[seqId] && inn) timeMap[seqId].last = inn;
+    }
   }
 
   return (
@@ -111,6 +119,7 @@ export default async function SequencesPage() {
               <div className="space-y-2">
                 {upcoming.map((seq) => {
                   const c = countsMap[seq.id] ?? { active: 0 };
+                  const t = timeMap[seq.id];
                   return (
                     <Link key={seq.id} href={`/sequences/${seq.id}`}>
                       <div className="bg-surface border border-border rounded-lg px-5 py-4 hover:border-green-dim transition-colors flex items-center gap-4">
@@ -127,6 +136,11 @@ export default async function SequencesPage() {
                               {formatDate(seq.report_date)} →{" "}
                               {formatDate(seq.release_date)}
                             </span>
+                            {t && (
+                              <span className="text-xs font-mono text-foreground/40">
+                                {t.first} – {t.last}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -171,6 +185,7 @@ export default async function SequencesPage() {
               <div className="space-y-2">
                 {past.map((seq) => {
                   const c = countsMap[seq.id] ?? { active: 0 };
+                  const t = timeMap[seq.id];
                   return (
                     <Link key={seq.id} href={`/sequences/${seq.id}`}>
                       <div className="bg-surface border border-border rounded-lg px-5 py-4 hover:border-green-dim transition-colors flex items-center gap-4">
@@ -187,6 +202,11 @@ export default async function SequencesPage() {
                               {formatDate(seq.report_date)} →{" "}
                               {formatDate(seq.release_date)}
                             </span>
+                            {t && (
+                              <span className="text-xs font-mono text-foreground/40">
+                                {t.first} – {t.last}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">

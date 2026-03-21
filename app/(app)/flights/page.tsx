@@ -29,6 +29,13 @@ export default async function FlightsPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  const isAdmin = profile?.role === "admin";
+
   const nowIso = new Date().toISOString();
   const hasFilters =
     params.start || params.end || params.aircraft || params.approach;
@@ -361,6 +368,8 @@ export default async function FlightsPage({
                       <FetchTimesButton
                         flightId={f.id}
                         hasActualTimes={!!f.actual_out_utc}
+                        isAdmin={isAdmin}
+                        hasFetchedData={!!(f as any).fa_flight_id}
                       />
                       <DeleteFlightButton flightId={f.id} />
                     </div>

@@ -10,6 +10,8 @@ import { FlightProfile } from '@/components/flights/flight-profile'
 import { getAirportTimezone } from '@/lib/data/airport-timezones'
 import { utcDtToLocal, getTimezoneAbbr } from '@/lib/utils/timezone'
 import { deriveFlightStats, type TrackPoint } from '@/lib/api/flightaware'
+import { FetchTimesButton } from '@/components/flights/fetch-times-button'
+import { AIRPORT_COORDS } from '@/lib/data/airport-coords'
 
 /** Convert IATA-or-ICAO code to 4-letter ICAO for timezone lookup */
 function toIcao(code: string | null): string {
@@ -38,7 +40,14 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
     .eq('id', id)
     .single()
 
-  if (!flight || (flight.pilot_id !== user.id && flight.copilot_id !== user.id)) notFound()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const isAdmin = profile?.role === 'admin'
+
+  if (!flight || (!isAdmin && flight.pilot_id !== user.id && flight.copilot_id !== user.id)) notFound()
 
   // Look up copilot name
   let copilotName = null
@@ -57,6 +66,11 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
   const trackPoints: TrackPoint[] = (f.fa_track as TrackPoint[] | null) ?? []
   const hasTrack = trackPoints.length >= 2
   const stats = trackPoints.length >= 5 ? deriveFlightStats(trackPoints) : null
+
+  // Airport coords for great-circle fallback when no track data
+  const originCoords = AIRPORT_COORDS[flight.origin_icao ?? '']
+  const destCoords   = AIRPORT_COORDS[flight.destination_icao ?? '']
+  const showMap = hasTrack || (!!originCoords && !!destCoords)
 
   const hasProfileData = !!(f.actual_off_utc || f.actual_on_utc)
 
@@ -107,12 +121,23 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
           <h1 className="text-xl font-semibold text-green-primary font-mono">{flight.flight_number}</h1>
           <p className="text-sm text-foreground/50">{formatDate(flight.scheduled_out_utc)}</p>
         </div>
-        <div className="ml-auto flex gap-2 flex-wrap justify-end">
+        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           {flight.is_deadhead && <Badge variant="blue">Deadhead</Badge>}
           {flight.is_cancelled && <Badge variant="red">Cancelled</Badge>}
           {flight.had_diversion && <Badge variant="red">Diversion</Badge>}
           {flight.had_go_around && <Badge variant="yellow">Go-Around</Badge>}
           {flight.had_return_to_gate && <Badge variant="yellow">RTG</Badge>}
+          {f.fa_fetched_at && (
+            <span className="text-xs font-mono text-foreground/30" title={`FlightAware data fetched ${new Date(f.fa_fetched_at).toLocaleDateString()}`}>
+              ✓ tracked
+            </span>
+          )}
+          <FetchTimesButton
+            flightId={id}
+            hasActualTimes={!!flight.actual_out_utc}
+            isAdmin={isAdmin}
+            hasFetchedData={!!f.fa_flight_id}
+          />
           <Link href={`/flights/${id}/edit`}>
             <Badge variant="outline" className="cursor-pointer hover:border-green-dim">Edit</Badge>
           </Link>
@@ -185,11 +210,13 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
       )}
 
       {/* Map */}
-      {hasTrack && (
+      {showMap && (
         <FlightMap
           trackPoints={trackPoints}
           originIcao={flight.origin_icao ?? ''}
           destIcao={flight.destination_icao ?? ''}
+          originCoords={originCoords}
+          destCoords={destCoords}
         />
       )}
 

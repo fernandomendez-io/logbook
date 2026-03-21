@@ -22,19 +22,24 @@ export async function POST(
 
   const { data: flight } = await supabase
     .from('flights')
-    .select('pilot_id, flight_number, scheduled_out_utc, scheduled_in_utc, origin_icao')
+    .select('pilot_id, flight_number, scheduled_out_utc, scheduled_in_utc, origin_icao, actual_out_utc, actual_off_utc, actual_on_utc, actual_in_utc')
     .eq('id', id)
     .single()
 
-  if (!flight || flight.pilot_id !== user.id) {
+  if (!flight) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('operating_carrier')
+    .select('operating_carrier, role')
     .eq('id', user.id)
     .single()
+
+  const isAdmin = profile?.role === 'admin'
+  if (flight.pilot_id !== user.id && !isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const date   = new Date(flight.scheduled_out_utc).toISOString().slice(0, 10)
   const origin = flight.origin_icao?.length === 4
@@ -137,8 +142,14 @@ export async function POST(
     if (aa?.inUtc)  t.inUtc  = aa.inUtc
   }
 
-  const blockActual = t.outUtc && t.inUtc ? blockHours(t.outUtc, t.inUtc) : null
-  const flightTime  = t.offUtc && t.onUtc ? flightHours(t.offUtc, t.onUtc) : null
+  // Preserve any times the pilot already entered — only fill nulls
+  const outUtc  = flight.actual_out_utc  || t.outUtc  || null
+  const offUtc  = flight.actual_off_utc  || t.offUtc  || null
+  const onUtc   = flight.actual_on_utc   || t.onUtc   || null
+  const inUtc   = flight.actual_in_utc   || t.inUtc   || null
+
+  const blockActual = outUtc && inUtc ? blockHours(outUtc, inUtc) : null
+  const flightTime  = offUtc && onUtc ? flightHours(offUtc, onUtc) : null
 
   // Night time from track points
   const nightTimeHrs = track.length >= 2 ? calculateNightTimeHrs(track) : null
@@ -149,10 +160,10 @@ export async function POST(
   const { data: updated, error } = await supabase
     .from('flights')
     .update({
-      actual_out_utc:    t.outUtc      || null,
-      actual_off_utc:    t.offUtc      || null,
-      actual_on_utc:     t.onUtc       || null,
-      actual_in_utc:     t.inUtc       || null,
+      actual_out_utc:    outUtc,
+      actual_off_utc:    offUtc,
+      actual_on_utc:     onUtc,
+      actual_in_utc:     inUtc,
       block_actual_hrs:  blockActual   || null,
       flight_time_hrs:   flightTime    || null,
       tail_number:       t.tailNumber  || null,
@@ -166,6 +177,7 @@ export async function POST(
       descent_start_utc: t.descentStartUtc  ?? null,
       fa_flight_id:      faFlightId,
       fa_track:          track.length > 0 ? track : undefined,
+      fa_fetched_at:     new Date().toISOString(),
       night_time_hrs:    nightTimeHrs,
     } as any)
     .eq('id', id)

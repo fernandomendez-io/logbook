@@ -94,7 +94,7 @@ export default function AdminUsersPage() {
                   </Badge>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <button
                       onClick={() => toggleActive(user)}
                       disabled={updating === user.id}
@@ -110,6 +110,24 @@ export default function AdminUsersPage() {
                     >
                       {user.role === 'admin' ? '→ Pilot' : '→ Admin'}
                     </button>
+                    {user.employee_number && (
+                      <>
+                        <span className="text-foreground/20">·</span>
+                        <Link
+                          href={`/admin/flights?employee=${user.employee_number}`}
+                          className="text-xs text-foreground/40 hover:text-green-primary transition-colors"
+                        >
+                          Flights
+                        </Link>
+                        <span className="text-foreground/20">·</span>
+                        <Link
+                          href={`/admin/sequences?employee=${user.employee_number}`}
+                          className="text-xs text-foreground/40 hover:text-green-primary transition-colors"
+                        >
+                          Sequences
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

@@ -41,6 +41,13 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
 
   if (!sequence) notFound()
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  const isAdmin = profile?.role === 'admin'
+
   const { data: flights } = await supabase
     .from('flights')
     .select('*')
@@ -160,7 +167,7 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
                     </td>
                     <td className="py-3">
                       <div className="flex items-center gap-1">
-                        {!flight.is_cancelled && <FetchTimesButton flightId={flight.id} hasActualTimes={!!flight.actual_out_utc} />}
+                        {!flight.is_cancelled && <FetchTimesButton flightId={flight.id} hasActualTimes={!!flight.actual_out_utc} isAdmin={isAdmin} hasFetchedData={!!(flight as any).fa_flight_id} />}
                         <DeleteFlightButton flightId={flight.id} />
                       </div>
                     </td>

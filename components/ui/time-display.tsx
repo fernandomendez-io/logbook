@@ -12,7 +12,7 @@ export function TimeDisplay({ iso, isActual = false }: TimeDisplayProps) {
     )
   }
 
-  const utcTime = new Date(iso).toISOString().slice(11, 16) + 'Z'
+  const utcTime = new Date(iso).toISOString().slice(11, 16)
 
   return (
     <p className={`text-lg font-mono font-bold ${isActual ? 'text-green-primary' : 'text-foreground/50'}`}>

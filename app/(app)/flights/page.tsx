@@ -185,13 +185,13 @@ export default async function FlightsPage({
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground/50">
                       {(() => {
                         const lcl = fmtLocalCell(f.scheduled_out_utc, (f as any).origin_timezone)
-                        return lcl ? <>{lcl.time} <span className="text-foreground/30">{lcl.abbr}</span><br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span></> : <>{new Date(f.scheduled_out_utc).toISOString().slice(11, 16)}Z</>
+                        return lcl ? <>{lcl.time} <span className="text-foreground/30">{lcl.abbr}</span><br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span></> : <>{new Date(f.scheduled_out_utc).toISOString().slice(11, 16)}</>
                       })()}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground/50">
                       {(() => {
                         const lcl = fmtLocalCell(f.scheduled_in_utc, (f as any).dest_timezone)
-                        return lcl ? <>{lcl.time} <span className="text-foreground/30">{lcl.abbr}</span><br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span></> : <>{new Date(f.scheduled_in_utc).toISOString().slice(11, 16)}Z</>
+                        return lcl ? <>{lcl.time} <span className="text-foreground/30">{lcl.abbr}</span><br /><span className="text-[10px] text-foreground/25">{lcl.utcZ}</span></> : <>{new Date(f.scheduled_in_utc).toISOString().slice(11, 16)}</>
                       })()}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-foreground/60">
@@ -319,7 +319,7 @@ export default async function FlightsPage({
                         </span>
                       ) : (
                         <span className={dim ? 'text-foreground/30' : ''}>
-                          {new Date(iso).toISOString().slice(11, 16)}Z
+                          {new Date(iso).toISOString().slice(11, 16)}
                         </span>
                       )
                     })()}
@@ -336,7 +336,7 @@ export default async function FlightsPage({
                         </span>
                       ) : (
                         <span className={dim ? 'text-foreground/30' : ''}>
-                          {new Date(iso).toISOString().slice(11, 16)}Z
+                          {new Date(iso).toISOString().slice(11, 16)}
                         </span>
                       )
                     })()}

@@ -61,11 +61,34 @@ export default async function FlightDetailPage({ params }: { params: Promise<{ i
   const stats = trackPoints.length >= 5 ? deriveFlightStats(trackPoints) : null
 
   // Airport coords for great-circle fallback when no track data
-  const originCoords = AIRPORT_COORDS[flight.origin_icao ?? '']
-  const destCoords   = AIRPORT_COORDS[flight.destination_icao ?? '']
+  // Check static list first (instant), then fill gaps from the airports DB cache
+  let originCoords = AIRPORT_COORDS[flight.origin_icao ?? ''] as { lat: number; lon: number } | undefined
+  let destCoords   = AIRPORT_COORDS[flight.destination_icao ?? ''] as { lat: number; lon: number } | undefined
+
+  const missingIcaos = [
+    !originCoords && flight.origin_icao,
+    !destCoords   && flight.destination_icao,
+  ].filter(Boolean) as string[]
+
+  if (missingIcaos.length > 0) {
+    const { data: airportRows } = await (supabase as any)
+      .from('airports')
+      .select('airport_code, latitude, longitude')
+      .in('airport_code', missingIcaos)
+
+    for (const row of airportRows ?? []) {
+      if (row.latitude != null && row.longitude != null) {
+        const coord = { lat: row.latitude as number, lon: row.longitude as number }
+        if (row.airport_code === flight.origin_icao && !originCoords) originCoords = coord
+        if (row.airport_code === flight.destination_icao && !destCoords) destCoords = coord
+      }
+    }
+  }
+
   const showMap = hasTrack || (!!originCoords && !!destCoords)
 
-  const hasProfileData = !!(f.actual_off_utc || f.actual_on_utc)
+  // Only render the flight profile when real GPS track data exists (no fake bezier fallback)
+  const hasProfileData = hasTrack
 
   // Effective cruise values: prefer stored (may have been overridden by AA), fallback to derived
   const cruiseAltFt     = f.cruise_alt_ft     ?? stats?.cruiseAltFt     ?? null

@@ -1,15 +1,16 @@
 /**
  * POST /api/flights/:id/acars
  * Fetches FlightAware data for a flight and saves it directly.
- * AA gate times still take priority for OUT/IN (most authoritative for AA-marketed flights).
+ * Uses FlightAware data only. Scheduled times are stored as nominal local — origin_timezone
+ * is used to derive the correct UTC date for the FA lookup window.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { fetchFlightAwareFlight, deriveFlightStats, type TrackPoint } from '@/lib/api/flightaware'
-import { fetchAAGateTimes, stripCarrierPrefix } from '@/lib/api/aa'
 import { prefixFlightForSearch } from '@/lib/data/carriers'
 import { blockHours, flightHours } from '@/lib/utils/format'
 import { calculateNightTimeHrs } from '@/lib/utils/night-time'
+import { localDtToUtc } from '@/lib/utils/timezone'
 
 export async function POST(
   _req: NextRequest,
@@ -22,7 +23,7 @@ export async function POST(
 
   const { data: flight } = await supabase
     .from('flights')
-    .select('pilot_id, flight_number, scheduled_out_utc, scheduled_in_utc, origin_icao, actual_out_utc, actual_off_utc, actual_on_utc, actual_in_utc')
+    .select('pilot_id, flight_number, scheduled_out_utc, scheduled_in_utc, origin_icao, actual_out_utc, actual_off_utc, actual_on_utc, actual_in_utc, origin_timezone')
     .eq('id', id)
     .single()
 
@@ -41,12 +42,17 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const date   = new Date(flight.scheduled_out_utc).toISOString().slice(0, 10)
+  // scheduled_out_utc stores nominal local time — convert to UTC using origin timezone
+  // so the FA query window covers the correct calendar day
+  const originTz     = (flight as any).origin_timezone as string | null
+  const nominalLocal = flight.scheduled_out_utc.slice(0, 16)  // "YYYY-MM-DDTHH:MM" local
+  const utcDt        = originTz ? localDtToUtc(nominalLocal, originTz) : null
+  const date         = (utcDt ?? nominalLocal).slice(0, 10)   // correct UTC date for FA
+
   const origin = flight.origin_icao?.length === 4
     ? flight.origin_icao.slice(1)   // KDFW → DFW
     : flight.origin_icao
   const searchFlight = prefixFlightForSearch(flight.flight_number, profile?.operating_carrier)
-  const numericFlight = stripCarrierPrefix(flight.flight_number)
 
   // Check cache
   const { data: cachedRaw } = await supabase
@@ -95,23 +101,15 @@ export async function POST(
       arrivalDelaySec:     cached.arrival_delay_sec,
     }
   } else {
-    // Fetch FlightAware and AA in parallel — AA gate times take priority for OUT/IN
-    const [result, aa] = await Promise.all([
-      fetchFlightAwareFlight(searchFlight, date, origin ?? undefined),
-      fetchAAGateTimes(numericFlight, date),
-    ])
+    const result = await fetchFlightAwareFlight(searchFlight, date, origin ?? undefined)
 
-    if (!result.times && !aa) {
+    if (!result.times) {
       return NextResponse.json({ error: 'No tracking data found', debug: result.raw }, { status: 404 })
     }
 
     faFlightId = result.faFlightId
     track = result.track
-    t = {
-      ...(result.times ?? {}),
-      outUtc: aa?.outUtc ?? result.times?.outUtc ?? null,
-      inUtc:  aa?.inUtc  ?? result.times?.inUtc  ?? null,
-    }
+    t = { ...result.times }
 
     // Derive stats from track if we have it
     const stats = track.length >= 5 ? deriveFlightStats(track) : null
@@ -177,13 +175,6 @@ export async function POST(
       departure_delay_sec:  t.departureDelaySec   ?? null,
       arrival_delay_sec:    t.arrivalDelaySec     ?? null,
     }, { onConflict: 'flight_number,flight_date,origin_icao' })
-  }
-
-  // AA always overrides OUT/IN even on cached paths — gate data is authoritative
-  if (fromCache) {
-    const aa = await fetchAAGateTimes(numericFlight, date)
-    if (aa?.outUtc) t.outUtc = aa.outUtc
-    if (aa?.inUtc)  t.inUtc  = aa.inUtc
   }
 
   // Preserve any times the pilot already entered — only fill nulls

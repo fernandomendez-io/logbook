@@ -152,6 +152,25 @@ export type Database = {
           notes: string | null
           created_at: string
           updated_at: string
+          fa_flight_id: string | null
+          fa_track: Json | null
+          fa_fetched_at: string | null
+          departure_gate: string | null
+          arrival_gate: string | null
+          departure_runway: string | null
+          cruise_gspeed_kts: number | null
+          cruise_alt_ft: number | null
+          descent_start_utc: string | null
+          origin_timezone: string | null
+          dest_timezone: string | null
+          route: string | null
+          route_distance_nm: number | null
+          filed_airspeed_kts: number | null
+          filed_altitude_ft: number | null
+          terminal_origin: string | null
+          terminal_destination: string | null
+          baggage_claim: string | null
+          google_event_id: string | null
         }
         Insert: {
           pilot_id: string
@@ -194,6 +213,25 @@ export type Database = {
           had_return_to_gate?: boolean
           rtg_reason?: string | null
           notes?: string | null
+          fa_flight_id?: string | null
+          fa_track?: Json | null
+          fa_fetched_at?: string | null
+          departure_gate?: string | null
+          arrival_gate?: string | null
+          departure_runway?: string | null
+          cruise_gspeed_kts?: number | null
+          cruise_alt_ft?: number | null
+          descent_start_utc?: string | null
+          origin_timezone?: string | null
+          dest_timezone?: string | null
+          route?: string | null
+          route_distance_nm?: number | null
+          filed_airspeed_kts?: number | null
+          filed_altitude_ft?: number | null
+          terminal_origin?: string | null
+          terminal_destination?: string | null
+          baggage_claim?: string | null
+          google_event_id?: string | null
         }
         Update: Partial<Database['public']['Tables']['flights']['Insert']>
         Relationships: []
